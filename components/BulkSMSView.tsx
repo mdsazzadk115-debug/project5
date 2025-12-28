@@ -39,9 +39,13 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   const [showConfig, setShowConfig] = useState(false);
   const [smsConfig, setSmsConfig] = useState<SMSConfig>({ endpoint: '', apiKey: '', senderId: '' });
 
+  // Correctly await the async getSMSConfig call inside useEffect
   useEffect(() => {
-    const saved = getSMSConfig();
-    if (saved) setSmsConfig(saved);
+    const loadConfig = async () => {
+      const saved = await getSMSConfig();
+      if (saved) setSmsConfig(saved);
+    };
+    loadConfig();
   }, []);
 
   // Get unique categories from products
@@ -118,7 +122,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   };
 
   const handleSendSMS = async () => {
-    const config = getSMSConfig();
+    // Correctly await the async getSMSConfig call in handleSendSMS
+    const config = await getSMSConfig();
     if (!config || !config.apiKey || !config.endpoint) {
       alert("Please configure your SMS API Settings first.");
       setShowConfig(true);

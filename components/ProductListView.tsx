@@ -97,8 +97,9 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
     setStatusFilter('All');
   };
 
-  const handleAddProduct = () => {
-    const config = getWPConfig();
+  // Correctly handle async getWPConfig in handleAddProduct
+  const handleAddProduct = async () => {
+    const config = await getWPConfig();
     if (config && config.url) {
       const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
       // WooCommerce specific product creation link in WP Admin

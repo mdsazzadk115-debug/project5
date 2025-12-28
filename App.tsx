@@ -216,7 +216,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadWPData = async () => {
-      const config = getWPConfig();
+      // Correctly await the async getWPConfig call in loadWPData
+      const config = await getWPConfig();
       if (!config) return;
 
       setLoadingData(true);

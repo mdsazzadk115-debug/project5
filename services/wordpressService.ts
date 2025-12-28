@@ -1,4 +1,3 @@
-
 import { Order, Product, InventoryProduct } from "../types";
 
 export interface WPConfig {
@@ -14,47 +13,52 @@ export interface WPCategory {
   count: number;
 }
 
-export const getWPConfig = (): WPConfig | null => {
-  const saved = localStorage.getItem('wp_config');
-  return saved ? JSON.parse(saved) : null;
+// Helper to interact with PHP Backend
+const fetchSetting = async (key: string) => {
+  try {
+    const res = await fetch(`api/settings.php?key=${key}`);
+    const data = await res.json();
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
 };
 
-export const saveWPConfig = (config: WPConfig) => {
-  localStorage.setItem('wp_config', JSON.stringify(config));
+const saveSetting = async (key: string, value: any) => {
+  await fetch(`api/settings.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value: JSON.stringify(value) })
+  });
+};
+
+// We will use a local cache variable to avoid too many API calls, 
+// but the source of truth is the DB.
+let cachedConfig: WPConfig | null = null;
+
+export const getWPConfig = async (): Promise<WPConfig | null> => {
+  if (cachedConfig) return cachedConfig;
+  cachedConfig = await fetchSetting('wp_config');
+  return cachedConfig;
+};
+
+export const saveWPConfig = async (config: WPConfig) => {
+  cachedConfig = config;
+  await saveSetting('wp_config', config);
 };
 
 export const fetchOrdersFromWP = async (): Promise<Order[]> => {
-  const config = getWPConfig();
-  if (!config) throw new Error("WordPress not configured");
+  const config = await getWPConfig();
+  if (!config || !config.url) throw new Error("WordPress not configured");
 
   const { url, consumerKey, consumerSecret } = config;
   const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
   const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
 
   try {
-    let allWcOrders: any[] = [];
-    let page = 1;
-    let totalPages = 1;
-
-    const firstResponse = await fetch(`${apiBase}&page=${page}`);
-    if (!firstResponse.ok) throw new Error("Failed to fetch from WordPress");
-    
-    totalPages = parseInt(firstResponse.headers.get('X-WP-TotalPages') || '1');
-    const firstPageOrders = await firstResponse.json();
-    allWcOrders = [...firstPageOrders];
-
-    if (totalPages > 1) {
-      const pagePromises = [];
-      for (let i = 2; i <= totalPages; i++) {
-        pagePromises.push(
-          fetch(`${apiBase}&page=${i}`).then(res => res.ok ? res.json() : [])
-        );
-      }
-      const remainingPagesResults = await Promise.all(pagePromises);
-      remainingPagesResults.forEach(pageOrders => {
-        allWcOrders = [...allWcOrders, ...pageOrders];
-      });
-    }
+    const response = await fetch(`${apiBase}`);
+    if (!response.ok) throw new Error("Failed to fetch from WordPress");
+    const allWcOrders = await response.json();
 
     return allWcOrders.map((wc: any): Order => {
       let mappedStatus: Order['status'] = 'Pending';
@@ -68,27 +72,9 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         default: mappedStatus = 'Pending';
       }
 
-      const products: Product[] = wc.line_items.map((item: any) => ({
-        id: item.product_id.toString(),
-        name: item.name,
-        brand: 'N/A',
-        price: parseFloat(item.price),
-        qty: item.quantity,
-        img: 'https://picsum.photos/seed/' + item.product_id + '/100/100'
-      }));
-
-      const dateObj = new Date(wc.date_created);
-      const formattedDate = dateObj.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
       return {
         id: wc.id.toString(),
-        timestamp: dateObj.getTime(),
+        timestamp: new Date(wc.date_created).getTime(),
         customer: {
           name: `${wc.billing.first_name} ${wc.billing.last_name}`.trim() || wc.billing.email || 'Guest Customer',
           email: wc.billing.email,
@@ -96,107 +82,67 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
           avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(wc.billing.first_name || 'U')}+${encodeURIComponent(wc.billing.last_name || 'C')}&background=random`,
           orderCount: 0
         },
-        address: `${wc.billing.address_1}${wc.billing.city ? ', ' + wc.billing.city : ''}${wc.billing.country ? ', ' + wc.billing.country : ''}`,
-        date: formattedDate,
+        address: `${wc.billing.address_1}${wc.billing.city ? ', ' + wc.billing.city : ''}`,
+        date: new Date(wc.date_created).toLocaleString(),
         paymentMethod: wc.payment_method_title || 'Unknown',
-        products: products,
+        products: wc.line_items.map((item: any) => ({
+          id: item.product_id.toString(),
+          name: item.name,
+          brand: 'N/A',
+          price: parseFloat(item.price),
+          qty: item.quantity,
+          img: 'https://picsum.photos/seed/' + item.product_id + '/100/100'
+        })),
         subtotal: parseFloat(wc.total) - (parseFloat(wc.shipping_total) || 0),
         shippingCharge: parseFloat(wc.shipping_total) || 0,
         discount: parseFloat(wc.discount_total) || 0,
         total: parseFloat(wc.total),
         status: mappedStatus,
-        statusHistory: {
-          placed: formattedDate,
-          packaging: wc.status === 'processing' || wc.status === 'completed' ? formattedDate : undefined,
-          delivered: wc.status === 'completed' ? formattedDate : undefined
-        }
+        statusHistory: { placed: new Date(wc.date_created).toLocaleDateString() }
       };
     });
   } catch (error) {
     console.error("WordPress Orders API Error:", error);
-    throw error;
+    return [];
   }
 };
 
 export const fetchProductsFromWP = async (): Promise<InventoryProduct[]> => {
-  const config = getWPConfig();
-  if (!config) throw new Error("WordPress not configured");
+  const config = await getWPConfig();
+  if (!config || !config.url) return [];
 
   const { url, consumerKey, consumerSecret } = config;
   const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
   const apiBase = `${baseUrl}/wp-json/wc/v3/products?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
 
   try {
-    let allWcProducts: any[] = [];
-    let page = 1;
-    let totalPages = 1;
-
-    const firstResponse = await fetch(`${apiBase}&page=${page}`);
-    if (!firstResponse.ok) throw new Error("Failed to fetch products from WordPress");
-    
-    totalPages = parseInt(firstResponse.headers.get('X-WP-TotalPages') || '1');
-    const firstPageProducts = await firstResponse.json();
-    allWcProducts = [...firstPageProducts];
-
-    if (totalPages > 1) {
-      const pagePromises = [];
-      for (let i = 2; i <= totalPages; i++) {
-        pagePromises.push(
-          fetch(`${apiBase}&page=${i}`).then(res => res.ok ? res.json() : [])
-        );
-      }
-      const remainingPagesResults = await Promise.all(pagePromises);
-      remainingPagesResults.forEach(pageProducts => {
-        allWcProducts = [...allWcProducts, ...pageProducts];
-      });
-    }
-
-    return allWcProducts.map((wc: any): InventoryProduct => {
-      const price = parseFloat(wc.price || '0');
-      const regularPrice = parseFloat(wc.regular_price || wc.price || '0');
-      const discountPercent = regularPrice > price 
-        ? Math.round(((regularPrice - price) / regularPrice) * 100) 
-        : 0;
-
-      return {
-        id: wc.id.toString(),
-        name: wc.name,
-        brand: wc.attributes?.find((a: any) => a.name.toLowerCase() === 'brand')?.options[0] || 'N/A',
-        category: wc.categories[0]?.name || 'Uncategorized',
-        price: price,
-        originalPrice: regularPrice > price ? regularPrice : undefined,
-        discountPercent: discountPercent,
-        stock: wc.stock_quantity || 0,
-        status: wc.status === 'publish',
-        img: wc.images[0]?.src || 'https://picsum.photos/seed/' + wc.id + '/100/100'
-      };
-    });
+    const response = await fetch(apiBase);
+    const data = await response.json();
+    return data.map((wc: any): InventoryProduct => ({
+      id: wc.id.toString(),
+      name: wc.name,
+      brand: 'N/A',
+      category: wc.categories[0]?.name || 'Uncategorized',
+      price: parseFloat(wc.price || '0'),
+      discountPercent: 0,
+      stock: wc.stock_quantity || 0,
+      status: wc.status === 'publish',
+      img: wc.images[0]?.src || 'https://picsum.photos/seed/' + wc.id + '/100/100'
+    }));
   } catch (error) {
-    console.error("WordPress Products API Error:", error);
-    throw error;
+    return [];
   }
 };
 
 export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
-  const config = getWPConfig();
-  if (!config) return [];
-
+  const config = await getWPConfig();
+  if (!config || !config.url) return [];
   const { url, consumerKey, consumerSecret } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  const apiBase = `${baseUrl}/wp-json/wc/v3/products/categories?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
-
+  const apiBase = `${url}/wp-json/wc/v3/products/categories?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
   try {
-    const response = await fetch(apiBase);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.map((cat: any) => ({
-      id: cat.id,
-      name: cat.name,
-      slug: cat.slug,
-      count: cat.count
-    }));
-  } catch (error) {
-    console.error("WordPress Categories API Error:", error);
+    const res = await fetch(apiBase);
+    return await res.json();
+  } catch (e) {
     return [];
   }
 };

@@ -7,9 +7,13 @@ export const TopBar: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState<WPConfig>({ url: '', consumerKey: '', consumerSecret: '' });
 
+  // Correctly await the async getWPConfig call inside useEffect
   useEffect(() => {
-    const saved = getWPConfig();
-    if (saved) setConfig(saved);
+    const loadConfig = async () => {
+      const saved = await getWPConfig();
+      if (saved) setConfig(saved);
+    };
+    loadConfig();
   }, []);
 
   const handleSave = () => {
