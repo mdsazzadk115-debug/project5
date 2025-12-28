@@ -2,11 +2,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DashboardStats } from "../types";
 
-// Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const getBusinessInsights = async (stats: DashboardStats) => {
   try {
+    // Initialize inside the function to capture the environment's API key correctly
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze these business stats:

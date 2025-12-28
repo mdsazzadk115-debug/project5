@@ -1,6 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { GoogleGenAI } from "@google/genai";
 
 export interface SMSConfig {
   endpoint: string;
@@ -36,12 +35,16 @@ export const saveSMSConfig = async (config: SMSConfig) => {
 
 export const generateSMSTemplate = async (purpose: string, businessName: string) => {
   try {
+    // Initialize inside the function to capture the environment's API key correctly
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Create a professional and short SMS message for a business named "${businessName}". The purpose is: "${purpose}". Keep it under 160 characters. Return only the message text.`,
     });
     return response.text?.trim() || "Thank you for shopping with us!";
   } catch (error) {
+    console.error("Gemini SMS Generation Error:", error);
     return "Special offer just for you! Visit our store today.";
   }
 };
