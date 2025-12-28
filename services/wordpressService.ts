@@ -1,3 +1,4 @@
+
 import { Order, Product, InventoryProduct } from "../types";
 
 export interface WPConfig {
@@ -13,13 +14,17 @@ export interface WPCategory {
   count: number;
 }
 
-// Helper to interact with PHP Backend
 const fetchSetting = async (key: string) => {
   try {
-    // Path remains api/ because public/api becomes dist/api
     const res = await fetch(`api/settings.php?key=${key}`);
-    const data = await res.json();
-    return data ? JSON.parse(data) : null;
+    if (!res.ok) return null;
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
   } catch (e) {
     console.error("Error fetching setting:", key, e);
     return null;
@@ -52,16 +57,16 @@ export const saveWPConfig = async (config: WPConfig) => {
 };
 
 export const fetchOrdersFromWP = async (): Promise<Order[]> => {
-  const config = await getWPConfig();
-  if (!config || !config.url) throw new Error("WordPress not configured");
-
-  const { url, consumerKey, consumerSecret } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
-
   try {
+    const config = await getWPConfig();
+    if (!config || !config.url) return [];
+
+    const { url, consumerKey, consumerSecret } = config;
+    const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
+
     const response = await fetch(`${apiBase}`);
-    if (!response.ok) throw new Error("Failed to fetch from WordPress");
+    if (!response.ok) return [];
     const allWcOrders = await response.json();
 
     return allWcOrders.map((wc: any): Order => {
@@ -112,15 +117,16 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
 };
 
 export const fetchProductsFromWP = async (): Promise<InventoryProduct[]> => {
-  const config = await getWPConfig();
-  if (!config || !config.url) return [];
-
-  const { url, consumerKey, consumerSecret } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  const apiBase = `${baseUrl}/wp-json/wc/v3/products?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
-
   try {
+    const config = await getWPConfig();
+    if (!config || !config.url) return [];
+
+    const { url, consumerKey, consumerSecret } = config;
+    const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    const apiBase = `${baseUrl}/wp-json/wc/v3/products?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
+
     const response = await fetch(apiBase);
+    if (!response.ok) return [];
     const data = await response.json();
     return data.map((wc: any): InventoryProduct => ({
       id: wc.id.toString(),
@@ -140,12 +146,13 @@ export const fetchProductsFromWP = async (): Promise<InventoryProduct[]> => {
 };
 
 export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
-  const config = await getWPConfig();
-  if (!config || !config.url) return [];
-  const { url, consumerKey, consumerSecret } = config;
-  const apiBase = `${url}/wp-json/wc/v3/products/categories?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
   try {
+    const config = await getWPConfig();
+    if (!config || !config.url) return [];
+    const { url, consumerKey, consumerSecret } = config;
+    const apiBase = `${url}/wp-json/wc/v3/products/categories?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
     const res = await fetch(apiBase);
+    if (!res.ok) return [];
     return await res.json();
   } catch (e) {
     console.error("WordPress Categories API Error:", e);
