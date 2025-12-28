@@ -1,0 +1,245 @@
+
+import React from 'react';
+import { 
+  Printer, 
+  Info, 
+  MapPin, 
+  Mail, 
+  Phone, 
+  Search,
+  Package,
+  Truck,
+  Heart
+} from 'lucide-react';
+import { Order } from '../types';
+
+interface OrderDetailViewProps {
+  order: Order;
+  onBack: () => void;
+}
+
+export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack }) => {
+  const isStepCompleted = (step: 'placed' | 'packaging' | 'shipping' | 'delivered') => {
+    // Explicitly define statusMap to handle all valid Order statuses including 'Cancelled'
+    const statusMap: Record<Order['status'], string[]> = {
+      'Pending': ['placed'],
+      'Packaging': ['placed', 'packaging'],
+      'Shipping': ['placed', 'packaging', 'shipping'],
+      'Delivered': ['placed', 'packaging', 'shipping', 'delivered'],
+      'Returned': ['placed', 'packaging', 'shipping'],
+      'Rejected': ['placed'],
+      'Cancelled': ['placed']
+    };
+    return statusMap[order.status]?.includes(step) || false;
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 pb-12">
+      {/* Header Info */}
+      <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm flex justify-between items-start">
+        <div className="space-y-4 w-full">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-medium">
+              <span className="text-orange-600 font-bold">Order ID: {order.id}</span>
+              <span className="text-gray-400 ml-4">Date: {order.date}</span>
+            </h2>
+            <button className="bg-orange-600 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md hover:bg-orange-700 transition-colors">
+              <Printer size={16} /> Print
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-gray-400 italic">
+            <Info size={14} />
+            Orders in route to the customer destination.
+            <div className="ml-auto flex gap-2">
+              {order.status === 'Returned' && <span className="bg-red-50 text-red-500 px-3 py-1 rounded border border-red-100 font-medium uppercase text-[10px]">Returned</span>}
+              {order.status === 'Delivered' && <span className="bg-blue-50 text-blue-500 px-3 py-1 rounded border border-blue-100 font-medium uppercase text-[10px]">Delivered</span>}
+              {order.status === 'Rejected' && <span className="bg-gray-50 text-gray-500 px-3 py-1 rounded border border-gray-100 font-medium uppercase text-[10px]">Rejected</span>}
+              {order.status === 'Cancelled' && <span className="bg-red-100 text-red-700 px-3 py-1 rounded border border-red-200 font-medium uppercase text-[10px]">Cancelled</span>}
+            </div>
+          </div>
+
+          {/* Progress Tracker */}
+          <div className="relative pt-8 pb-4 px-4">
+            <div className="absolute top-[52px] left-12 right-12 h-1 bg-gray-100"></div>
+            <div 
+              className="absolute top-[52px] left-12 h-1 bg-orange-500 transition-all duration-1000"
+              style={{ width: 
+                order.status === 'Pending' ? '0%' : 
+                order.status === 'Packaging' ? '33%' : 
+                order.status === 'Shipping' ? '66%' : 
+                order.status === 'Delivered' ? '100%' : '0%' 
+              }}
+            ></div>
+            
+            <div className="relative flex justify-between">
+              {/* Step 1: Placed */}
+              <div className="flex flex-col items-center gap-2">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('placed') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
+                  <Package size={20} />
+                </div>
+                <div className="text-center">
+                  <p className={`text-[10px] font-bold uppercase ${isStepCompleted('placed') ? 'text-orange-600' : 'text-gray-400'}`}>Order placed</p>
+                  <p className="text-[10px] text-gray-400">{order.statusHistory.placed}</p>
+                </div>
+              </div>
+
+              {/* Step 2: Packaging */}
+              <div className="flex flex-col items-center gap-2">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('packaging') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
+                  <Package size={20} />
+                </div>
+                <div className="text-center">
+                  <p className={`text-[10px] font-bold uppercase ${isStepCompleted('packaging') ? 'text-orange-600' : 'text-gray-400'}`}>Packaging</p>
+                  {order.statusHistory.packaging && <p className="text-[10px] text-gray-400">{order.statusHistory.packaging}</p>}
+                </div>
+              </div>
+
+              {/* Step 3: Shipping */}
+              <div className="flex flex-col items-center gap-2">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('shipping') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
+                  <Truck size={20} />
+                </div>
+                <div className="text-center">
+                  <p className={`text-[10px] font-bold uppercase ${isStepCompleted('shipping') ? 'text-orange-600' : 'text-gray-400'}`}>Shipping</p>
+                  {order.statusHistory.shipping && <p className="text-[10px] text-gray-400">{order.statusHistory.shipping}</p>}
+                </div>
+              </div>
+
+              {/* Step 4: Delivered */}
+              <div className="flex flex-col items-center gap-2">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center z-10 shadow-sm ${isStepCompleted('delivered') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-dashed border-gray-200 text-gray-300'}`}>
+                  <Heart size={20} />
+                </div>
+                <div className="text-center">
+                  <p className={`text-[10px] font-bold uppercase ${isStepCompleted('delivered') ? 'text-orange-600' : 'text-gray-400'}`}>Delivered</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-6">
+        {/* Left: Order Items */}
+        <div className="col-span-12 lg:col-span-9 bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-50 bg-gray-50/30">
+            <h3 className="text-sm font-bold text-gray-700">Order Item</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-gray-50/50">
+              <tr>
+                <th className="px-6 py-3 text-xs font-bold text-gray-400 uppercase text-center border-b border-gray-100">Product Name</th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-400 uppercase text-center border-b border-l border-gray-100">Unit Price</th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-400 uppercase text-center border-b border-l border-gray-100">QTY</th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-400 uppercase text-center border-b border-l border-gray-100">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {order.products.map((p, i) => (
+                <tr key={i}>
+                  <td className="px-6 py-4 flex items-center gap-4">
+                    <img src={p.img} alt={p.name} className="w-12 h-12 rounded border border-gray-100 p-1 object-cover" />
+                    <div className="max-w-xs">
+                      <p className="text-xs font-medium text-gray-800 line-clamp-1">{p.name}</p>
+                      <p className="text-[10px] font-bold text-green-500 uppercase">{p.brand}</p>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-center text-sm text-gray-600 border-l border-gray-100">৳{p.price.toLocaleString()}</td>
+                  <td className="px-6 py-4 text-center text-sm text-gray-600 border-l border-gray-100">{p.qty}</td>
+                  <td className="px-6 py-4 text-center text-sm font-bold text-gray-800 border-l border-gray-100">৳{(p.price * p.qty).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="p-6 border-t border-gray-100 flex justify-end">
+            <div className="w-64 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Subtotal</span>
+                <span className="font-bold text-gray-800">৳{order.subtotal.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Shipping Charge</span>
+                <span className="font-bold text-gray-800">৳{order.shippingCharge}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Discount</span>
+                <span className="font-bold text-green-500">Saved (৳{order.discount.toLocaleString()})</span>
+              </div>
+              <div className="flex justify-between border-t border-gray-100 pt-3">
+                <span className="font-bold text-gray-800">Total</span>
+                <span className="font-bold text-gray-800 text-lg">৳{order.total.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Sidebar Info */}
+        <div className="col-span-12 lg:col-span-3 space-y-4">
+          <div className="bg-white p-5 rounded-lg border border-gray-100 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-sm font-bold text-gray-500 italic">Customer Details</h4>
+              <button className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded font-bold uppercase">View Profile</button>
+            </div>
+            <div className="flex items-center gap-4 mb-4">
+              <img src={order.customer.avatar} alt={order.customer.name} className="w-12 h-12 rounded-lg object-cover" />
+              <div>
+                <p className="text-sm font-bold text-gray-800">{order.customer.name}</p>
+                <p className="text-[10px] text-green-500 font-bold uppercase">User</p>
+              </div>
+            </div>
+            <div className="space-y-2 text-xs text-gray-500">
+              <p className="font-bold text-green-500">Orders : {order.customer.orderCount}</p>
+              <div className="flex items-center gap-2">
+                <Mail size={12} className="text-gray-400" /> {order.customer.email}
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone size={12} className="text-gray-400" /> {order.customer.phone}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-lg border border-gray-100 shadow-sm">
+            <h4 className="text-sm font-bold text-orange-500 italic mb-4">Delivery Addresses</h4>
+            <div className="flex gap-3 mb-4">
+              <MapPin size={16} className="text-gray-300 shrink-0" />
+              <p className="text-xs text-gray-500 leading-relaxed">{order.address}</p>
+            </div>
+            <div className="flex justify-between items-center text-xs text-gray-500">
+              <div className="flex items-center gap-1 font-medium text-gray-700">
+                {order.customer.name}
+              </div>
+              <div className="flex items-center gap-1">
+                <Phone size={12} className="text-gray-300" /> {order.customer.phone}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-lg border border-gray-100 shadow-sm">
+            <h4 className="text-sm font-bold text-orange-500 italic mb-4">Payment Details</h4>
+            <div className="space-y-3">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Payment Method:</span>
+                <span className="font-bold text-gray-800 uppercase">{order.paymentMethod}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Total Amount:</span>
+                <span className="font-bold text-gray-800">৳{order.total.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-lg border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Search size={16} className="text-gray-400" />
+              <h4 className="text-sm font-medium text-gray-700">Check Customer Fraud History</h4>
+            </div>
+            <button className="w-full py-2 border border-red-400 text-red-500 rounded-full text-xs font-bold hover:bg-red-50 transition-colors">
+              Check Now
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
