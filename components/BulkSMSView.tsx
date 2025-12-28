@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   Send, 
@@ -11,10 +11,13 @@ import {
   Layers,
   Package,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  Settings,
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { Customer, Order, InventoryProduct } from '../types';
-import { generateSMSTemplate } from '../services/smsService';
+import { generateSMSTemplate, getSMSConfig, saveSMSConfig, SMSConfig, sendActualSMS } from '../services/smsService';
 
 interface BulkSMSViewProps {
   customers: Customer[];
@@ -31,6 +34,15 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendLogs, setSendLogs] = useState<{ phone: string; status: 'sent' | 'failed' }[]>([]);
+  
+  // API Config State
+  const [showConfig, setShowConfig] = useState(false);
+  const [smsConfig, setSmsConfig] = useState<SMSConfig>({ endpoint: '', apiKey: '', senderId: '' });
+
+  useEffect(() => {
+    const saved = getSMSConfig();
+    if (saved) setSmsConfig(saved);
+  }, []);
 
   // Get unique categories from products
   const categories = useMemo(() => {
@@ -47,24 +59,20 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   // Filtering Logic for Customers
   const filteredCustomers = useMemo(() => {
     return customers.filter(customer => {
-      // 1. Text Search Filter
       const matchesSearch = 
         customer.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         customer.phone.includes(searchTerm);
 
       if (!matchesSearch) return false;
 
-      // 2. Category / Product Purchase History Filter
       const customerOrders = orders.filter(o => o.customer.phone === customer.phone);
       
-      // If filtering by specific product
       if (selectedProduct !== 'All') {
         const hasBoughtProduct = customerOrders.some(order => 
           order.products.some(p => p.id === selectedProduct || p.name === selectedProduct)
         );
         if (!hasBoughtProduct) return false;
       } 
-      // Else if filtering by specific category
       else if (selectedCategory !== 'All') {
         const hasBoughtInCategory = customerOrders.some(order => 
           order.products.some(orderProd => {
@@ -104,20 +112,41 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     setIsGenerating(false);
   };
 
+  const handleSaveConfig = () => {
+    saveSMSConfig(smsConfig);
+    setShowConfig(false);
+  };
+
   const handleSendSMS = async () => {
+    const config = getSMSConfig();
+    if (!config || !config.apiKey || !config.endpoint) {
+      alert("Please configure your SMS API Settings first.");
+      setShowConfig(true);
+      return;
+    }
+
     if (selectedPhones.size === 0 || !message.trim()) return;
 
     setIsSending(true);
     setSendLogs([]);
     
     const phones = Array.from(selectedPhones);
+    let successCount = 0;
+
     for (const phone of phones) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-      setSendLogs(prev => [...prev, { phone, status: 'sent' }]);
+      const success = await sendActualSMS(config, phone, message);
+      if (success) {
+        successCount++;
+        setSendLogs(prev => [...prev, { phone, status: 'sent' }]);
+      } else {
+        setSendLogs(prev => [...prev, { phone, status: 'failed' }]);
+      }
+      // Small delay to prevent rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
     
     setIsSending(false);
-    alert(`${selectedPhones.size} messages sent successfully!`);
+    alert(`Process completed. ${successCount} out of ${selectedPhones.size} messages sent.`);
     setSelectedPhones(new Set());
     setMessage('');
   };
@@ -136,6 +165,12 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
           <p className="text-sm text-gray-500">Reach your customers instantly with personalized SMS.</p>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowConfig(true)}
+            className="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-500 hover:text-orange-600 hover:border-orange-200 transition-all flex items-center gap-2 text-sm font-medium"
+          >
+            <Settings size={18} /> API Config
+          </button>
           <div className="px-4 py-2 bg-orange-50 rounded-lg border border-orange-100 flex items-center gap-2">
             <Users size={16} className="text-orange-600" />
             <span className="text-sm font-bold text-orange-600">{selectedPhones.size} Selected</span>
@@ -143,13 +178,27 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
         </div>
       </div>
 
+      {!smsConfig.apiKey && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-4 text-amber-800 animate-pulse">
+          <AlertCircle className="shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold">SMS API Not Configured</p>
+            <p className="text-xs opacity-80">You need to add your API credentials before you can send actual messages.</p>
+          </div>
+          <button 
+            onClick={() => setShowConfig(true)}
+            className="px-4 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors"
+          >
+            Configure Now
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Customer Selection */}
         <div className="lg:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col h-[650px]">
-          {/* Filtering Section */}
           <div className="p-4 border-b border-gray-50 bg-gray-50/30 space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Search */}
               <div className="relative flex-1 min-w-[200px]">
                 <input 
                   type="text" 
@@ -161,13 +210,12 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               </div>
 
-              {/* Category Filter */}
               <div className="relative">
                 <select 
                   value={selectedCategory}
                   onChange={(e) => {
                     setSelectedCategory(e.target.value);
-                    setSelectedProduct('All'); // Reset product when category changes
+                    setSelectedProduct('All');
                   }}
                   className="appearance-none pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-white hover:border-orange-500 transition-colors focus:outline-none"
                 >
@@ -179,7 +227,6 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
               </div>
 
-              {/* Product Filter */}
               <div className="relative">
                 <select 
                   value={selectedProduct}
@@ -195,11 +242,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
               </div>
 
-              <button 
-                onClick={resetFilters}
-                className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                title="Reset Filters"
-              >
+              <button onClick={resetFilters} className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
                 <RotateCcw size={18} />
               </button>
             </div>
@@ -208,10 +251,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                 Found {filteredCustomers.length} Customers
               </span>
-              <button 
-                onClick={toggleSelectAll}
-                className="text-xs font-bold text-orange-600 hover:bg-orange-50 px-3 py-1 rounded-lg transition-colors"
-              >
+              <button onClick={toggleSelectAll} className="text-xs font-bold text-orange-600 hover:bg-orange-50 px-3 py-1 rounded-lg transition-colors">
                 {selectedPhones.size === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All'}
               </button>
             </div>
@@ -328,7 +368,6 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
             </button>
           </div>
 
-          {/* Sending Status Log */}
           {sendLogs.length > 0 && (
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
               <h3 className="text-sm font-bold text-gray-800 mb-4">Send Progress</h3>
@@ -337,8 +376,17 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                   <div key={idx} className="flex items-center justify-between py-1 text-xs">
                     <span className="text-gray-500 font-medium">{log.phone}</span>
                     <div className="flex items-center gap-1">
-                      <CheckCircle2 size={12} className="text-green-500" />
-                      <span className="text-green-600 font-bold uppercase">Sent</span>
+                      {log.status === 'sent' ? (
+                        <>
+                          <CheckCircle2 size={12} className="text-green-500" />
+                          <span className="text-green-600 font-bold uppercase">Sent</span>
+                        </>
+                      ) : (
+                        <>
+                          <X size={12} className="text-red-500" />
+                          <span className="text-red-600 font-bold uppercase">Failed</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -347,6 +395,66 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
           )}
         </div>
       </div>
+
+      {/* SMS Configuration Modal */}
+      {showConfig && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">SMS API Settings</h2>
+                <p className="text-xs text-gray-500">Connect your bulk SMS gateway</p>
+              </div>
+              <button onClick={() => setShowConfig(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase">Gateway URL (API Endpoint)</label>
+                <input 
+                  type="text" 
+                  placeholder="https://sms-gateway.com/api/send"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                  value={smsConfig.endpoint}
+                  onChange={(e) => setSmsConfig({...smsConfig, endpoint: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase">API Key</label>
+                <input 
+                  type="password" 
+                  placeholder="Your API Key"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                  value={smsConfig.apiKey}
+                  onChange={(e) => setSmsConfig({...smsConfig, apiKey: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase">Sender ID / Brand Name</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. BDCOMMERCE"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                  value={smsConfig.senderId}
+                  onChange={(e) => setSmsConfig({...smsConfig, senderId: e.target.value})}
+                />
+              </div>
+              <div className="pt-4">
+                <button 
+                  onClick={handleSaveConfig}
+                  className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-700 transition-all active:scale-[0.98]"
+                >
+                  Save Configuration
+                </button>
+                <p className="text-[10px] text-center text-gray-400 mt-4 leading-relaxed px-4">
+                  Check your SMS provider's documentation for the correct Endpoint URL and API Key.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
