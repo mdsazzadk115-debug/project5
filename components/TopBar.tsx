@@ -125,7 +125,7 @@ export const TopBar: React.FC = () => {
                   Save & Connect
                 </button>
                 <p className="text-[10px] text-center text-gray-400 mt-4 leading-relaxed px-4">
-                  Go to <span className="font-bold">WooCommerce > Settings > Advanced > REST API</span> in your WordPress dashboard to generate keys.
+                  Go to <span className="font-bold">WooCommerce &gt; Settings &gt; Advanced &gt; REST API</span> in your WordPress dashboard to generate keys.
                 </p>
               </div>
             </div>

@@ -37,7 +37,6 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000000 });
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
 
-  // Load Categories on Mount
   useEffect(() => {
     const loadCategories = async () => {
       setLoadingCategories(true);
@@ -53,14 +52,12 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
     loadCategories();
   }, []);
 
-  // Update state when products change
   useEffect(() => {
     if (initialProducts.length > 0) {
       setAllProducts(initialProducts);
     }
   }, [initialProducts]);
 
-  // Dynamic filtering logic
   const filteredProducts = useMemo(() => {
     return allProducts.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -75,7 +72,6 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
     });
   }, [allProducts, searchTerm, selectedCategories, priceRange, statusFilter]);
 
-  // Handlers for in-table updates
   const toggleStatus = (id: string) => {
     setAllProducts(prev => prev.map(p => p.id === id ? { ...p, status: !p.status } : p));
   };
@@ -97,15 +93,13 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
     setStatusFilter('All');
   };
 
-  // Correctly handle async getWPConfig in handleAddProduct
   const handleAddProduct = async () => {
     const config = await getWPConfig();
     if (config && config.url) {
       const baseUrl = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
-      // WooCommerce specific product creation link in WP Admin
       window.open(`${baseUrl}/wp-admin/post-new.php?post_type=product`, '_blank');
     } else {
-      alert("Please configure your WordPress connection first using the 'WP Connect' button in the top bar.");
+      alert("Please configure your WordPress connection first.");
     }
   };
 
@@ -116,37 +110,34 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
           <div className="p-4 flex items-center justify-between border-b border-gray-50">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-gray-800">All Products</h2>
-              <span className="w-6 h-6 rounded-full border border-orange-500 text-orange-500 flex items-center justify-center text-[10px] font-bold transition-all">
+              <span className="w-6 h-6 rounded-full border border-orange-500 text-orange-500 flex items-center justify-center text-[10px] font-bold">
                 {filteredProducts.length}
               </span>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <select 
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="appearance-none flex items-center gap-8 px-4 py-2 border border-gray-200 rounded-md text-sm text-gray-500 bg-white hover:border-orange-200 transition-colors outline-none cursor-pointer pr-10"
-                >
-                  <option value="All">All Status</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
+              <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="px-4 py-2 border border-gray-200 rounded-md text-sm text-gray-500 outline-none"
+              >
+                <option value="All">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
               <div className="relative">
                 <input 
                   type="text" 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search Products..." 
-                  className="pl-4 pr-10 py-2 border border-gray-200 rounded-md text-sm w-64 focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500 bg-gray-50/50"
+                  className="pl-4 pr-10 py-2 border border-gray-200 rounded-md text-sm w-64 outline-none"
                 />
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               </div>
               <button 
                 onClick={handleAddProduct}
-                className="bg-orange-600 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-orange-700 transition-colors"
+                className="bg-orange-600 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2"
               >
                 <Plus size={16} /> Add Product
               </button>
@@ -157,84 +148,40 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-gray-50">
-                  <th className="px-6 py-4 text-xs font-medium text-gray-400">Product Name</th>
-                  <th className="px-6 py-4 text-xs font-medium text-gray-400">Price</th>
-                  <th className="px-6 py-4 text-xs font-medium text-gray-400">Stock</th>
-                  <th className="px-6 py-4 text-xs font-medium text-gray-400">Status</th>
-                  <th className="px-6 py-4 text-xs font-medium text-gray-400 text-right">Action</th>
+                  <th className="px-6 py-4 text-xs font-medium text-gray-400 uppercase">Product Name</th>
+                  <th className="px-6 py-4 text-xs font-medium text-gray-400 uppercase">Price</th>
+                  <th className="px-6 py-4 text-xs font-medium text-gray-400 uppercase">Stock</th>
+                  <th className="px-6 py-4 text-xs font-medium text-gray-400 uppercase">Status</th>
+                  <th className="px-6 py-4 text-xs font-medium text-gray-400 uppercase text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredProducts.length > 0 ? filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-gray-50/30 transition-colors">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded bg-gray-50 border border-gray-100 flex items-center justify-center p-1 overflow-hidden">
-                          <img src={p.img} alt={p.name} className="w-full h-full object-cover rounded" />
-                        </div>
-                        <div className="max-w-[300px]">
-                          <p className="text-sm font-medium text-gray-800 line-clamp-1">{p.name}</p>
-                          <p className="text-[11px] font-bold text-green-500 uppercase mt-0.5">{p.brand}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">Category: {p.category}</p>
-                        </div>
+                {filteredProducts.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50/30">
+                    <td className="px-6 py-5 flex items-center gap-4">
+                      <img src={p.img} alt={p.name} className="w-12 h-12 rounded border p-1 object-cover" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-800 line-clamp-1">{p.name}</p>
+                        <p className="text-[10px] text-gray-400">{p.category}</p>
                       </div>
                     </td>
+                    <td className="px-6 py-5 text-sm font-medium">৳{p.price.toLocaleString()}</td>
                     <td className="px-6 py-5">
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-medium text-gray-800">
-                          ৳{p.price.toLocaleString()}
-                          {p.originalPrice && (
-                            <span className="text-[10px] text-gray-400 line-through ml-2">৳{p.originalPrice.toLocaleString()}</span>
-                          )}
-                        </p>
-                        {p.discountPercent > 0 && (
-                          <p className="text-[10px] font-bold text-green-500">({p.discountPercent}% OFF)</p>
-                        )}
-                      </div>
+                      <span className="text-xs font-bold text-gray-700">{p.stock}</span>
                     </td>
                     <td className="px-6 py-5">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-md">
-                        <span className="text-xs font-bold text-gray-700">{p.stock}</span>
-                        <Plus 
-                          size={12} 
-                          className="text-gray-400 cursor-pointer hover:text-orange-500 transition-colors" 
-                          onClick={() => incrementStock(p.id)}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          onClick={() => toggleStatus(p.id)}
-                          className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${p.status ? 'bg-green-500' : 'bg-gray-200'}`}
-                        >
-                          <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-200 ${p.status ? 'right-1' : 'left-1'}`} />
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-800 uppercase">{p.status ? 'ON' : 'OFF'}</span>
+                      <div 
+                        onClick={() => toggleStatus(p.id)}
+                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${p.status ? 'bg-green-500' : 'bg-gray-200'}`}
+                      >
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${p.status ? 'right-1' : 'left-1'}`} />
                       </div>
                     </td>
                     <td className="px-6 py-5 text-right">
-                      <button className="inline-flex items-center gap-2 px-4 py-1.5 border border-orange-200 rounded-lg text-orange-600 text-[11px] font-bold hover:bg-orange-50 transition-colors">
-                        Info <ChevronDown size={14} />
-                      </button>
+                      <button className="text-orange-600 text-xs font-bold">Details</button>
                     </td>
                   </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center gap-2 text-gray-400">
-                        <X className="w-8 h-8 opacity-20" />
-                        <p className="text-sm italic">No products found matching your filters</p>
-                        <button 
-                          onClick={clearAllFilters}
-                          className="text-xs text-orange-500 underline mt-2"
-                        >
-                          Clear all filters
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
@@ -245,12 +192,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-sm font-bold text-gray-800">Tags</h3>
-            <button 
-              onClick={clearAllFilters}
-              className="text-[10px] text-gray-400 underline uppercase font-bold tracking-wider hover:text-orange-500"
-            >
-              Clear All
-            </button>
+            <button onClick={clearAllFilters} className="text-[10px] text-gray-400 underline uppercase">Clear All</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {searchTerm && (
@@ -270,57 +212,20 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
         </div>
 
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-800 mb-6">Product Category</h3>
+          <h3 className="text-sm font-bold text-gray-800 mb-6">Category</h3>
           <div className="space-y-1 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
             {loadingCategories ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 size={24} className="animate-spin text-orange-500 opacity-50" />
-              </div>
-            ) : categories.length > 0 ? (
-              categories.map(cat => (
-                <CategoryFilterItem 
-                  key={cat.id} 
-                  label={cat.name} 
-                  count={cat.count} 
-                  checked={selectedCategories.includes(cat.name)}
-                  onToggle={() => toggleCategory(cat.name)}
-                />
-              ))
-            ) : (
-              <p className="text-[10px] text-gray-400 italic">No categories available</p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-800 mb-6">Price Range</h3>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 p-2 bg-gray-50 border border-gray-100 rounded-lg">
-              <input 
-                type="number" 
-                value={priceRange.min}
-                onChange={(e) => setPriceRange(prev => ({ ...prev, min: Number(e.target.value) }))}
-                className="w-full bg-transparent text-sm font-bold text-gray-800 outline-none" 
+              <Loader2 className="animate-spin text-orange-500 mx-auto" />
+            ) : categories.map(cat => (
+              <CategoryFilterItem 
+                key={cat.id} 
+                label={cat.name} 
+                count={cat.count} 
+                checked={selectedCategories.includes(cat.name)}
+                onToggle={() => toggleCategory(cat.name)}
               />
-            </div>
-            <div className="flex-1 p-2 bg-gray-50 border border-gray-100 rounded-lg">
-              <input 
-                type="number" 
-                value={priceRange.max}
-                onChange={(e) => setPriceRange(prev => ({ ...prev, max: Number(e.target.value) }))}
-                className="w-full bg-transparent text-sm font-bold text-gray-800 outline-none" 
-              />
-            </div>
+            ))}
           </div>
-          <input 
-            type="range" 
-            min="0" 
-            max="1000000" 
-            step="1000"
-            value={priceRange.max}
-            onChange={(e) => setPriceRange(prev => ({ ...prev, max: Number(e.target.value) }))}
-            className="w-full mt-4 accent-orange-500 h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer"
-          />
         </div>
       </div>
     </div>
