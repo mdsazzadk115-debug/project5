@@ -16,24 +16,28 @@ export interface WPCategory {
 // Helper to interact with PHP Backend
 const fetchSetting = async (key: string) => {
   try {
+    // Path remains api/ because public/api becomes dist/api
     const res = await fetch(`api/settings.php?key=${key}`);
     const data = await res.json();
     return data ? JSON.parse(data) : null;
   } catch (e) {
+    console.error("Error fetching setting:", key, e);
     return null;
   }
 };
 
 const saveSetting = async (key: string, value: any) => {
-  await fetch(`api/settings.php`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value: JSON.stringify(value) })
-  });
+  try {
+    await fetch(`api/settings.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value: JSON.stringify(value) })
+    });
+  } catch (e) {
+    console.error("Error saving setting:", key, e);
+  }
 };
 
-// We will use a local cache variable to avoid too many API calls, 
-// but the source of truth is the DB.
 let cachedConfig: WPConfig | null = null;
 
 export const getWPConfig = async (): Promise<WPConfig | null> => {
@@ -130,6 +134,7 @@ export const fetchProductsFromWP = async (): Promise<InventoryProduct[]> => {
       img: wc.images[0]?.src || 'https://picsum.photos/seed/' + wc.id + '/100/100'
     }));
   } catch (error) {
+    console.error("WordPress Products API Error:", error);
     return [];
   }
 };
@@ -143,6 +148,7 @@ export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
     const res = await fetch(apiBase);
     return await res.json();
   } catch (e) {
+    console.error("WordPress Categories API Error:", e);
     return [];
   }
 };
