@@ -262,7 +262,7 @@ export const ProductListView: React.FC<ProductListViewProps> = ({ initialProduct
               <span key={cat} className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-full flex items-center gap-2">
                 {cat} <X size={10} className="cursor-pointer" onClick={() => toggleCategory(cat)} />
               </span>
-            )}
+            ))}
             {!searchTerm && selectedCategories.length === 0 && (
               <p className="text-[10px] text-gray-400 italic">No active tags</p>
             )}
