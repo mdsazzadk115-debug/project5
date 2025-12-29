@@ -23,42 +23,15 @@ import {
   ClipboardCheck,
   Zap,
   Receipt,
-  Loader2
+  Loader2,
+  RefreshCcw
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
 import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig } from './services/wordpressService';
+import { syncOrderStatusWithCourier } from './services/courierService';
 import { DashboardStats, Order, InventoryProduct, Customer } from './types';
 
-const INITIAL_ORDERS: Order[] = [
-  {
-    id: 'OYVu3fdO7m',
-    timestamp: new Date('2025-09-04T05:56:00').getTime(),
-    customer: {
-      name: 'Demo Customer',
-      email: 'customer@bdcommerce.app',
-      phone: '01715494846',
-      avatar: 'https://picsum.photos/seed/c1/100/100',
-      orderCount: 1
-    },
-    address: 'Bangladesh Chittagong Av. Atlântica, 1702 Copacabana Rio de Janeiro - RJ, Brazil...',
-    date: '4 Sept 2025, 5:56 AM',
-    paymentMethod: 'COD',
-    status: 'Shipping',
-    subtotal: 164252,
-    shippingCharge: 0,
-    discount: 32552,
-    total: 131700,
-    statusHistory: {
-      placed: '4 Sept 2025',
-      packaging: '18 Nov 2025',
-      shipping: '19 Nov 2025'
-    },
-    products: [
-      { id: '1', name: 'Dyson V15 Detect Absolute Vacuum', brand: 'Canon', price: 160000, qty: 1, img: 'https://picsum.photos/seed/v1/100/100' },
-      { id: '2', name: 'Logitech MX Master 3S Mouse', brand: 'Logitech', price: 1562, qty: 1, img: 'https://picsum.photos/seed/v2/100/100' }
-    ]
-  }
-];
+const INITIAL_ORDERS: Order[] = [];
 
 const DashboardContent: React.FC<{ 
   stats: DashboardStats; 
@@ -66,26 +39,29 @@ const DashboardContent: React.FC<{
   aiInsights: string[];
   statusCounts: Record<string, number>;
   loadingData: boolean;
-}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData }) => (
+  onRefresh: () => void;
+}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData, onRefresh }) => (
   <div className="space-y-8 animate-in fade-in duration-500">
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      <StatCard title="Net Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
-      <StatCard title="Gross Profit" value={stats.grossProfit.toLocaleString()} change={100} icon={<Briefcase size={20} />} />
-      <StatCard title="Total Expenses" value={stats.totalExpenses.toLocaleString()} change={0} icon={<CreditCard size={20} />} />
-      <StatCard title="Total POS Sale" value={stats.totalPosSale.toLocaleString()} change={100} icon={<Receipt size={20} />} />
+    <div className="flex justify-between items-center">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
+        <StatCard title="Net Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
+        <StatCard title="Gross Profit" value={stats.grossProfit.toLocaleString()} change={100} icon={<Briefcase size={20} />} />
+        <StatCard title="Total Expenses" value={stats.totalExpenses.toLocaleString()} change={0} icon={<CreditCard size={20} />} />
+        <StatCard title="Total POS Sale" value={stats.totalPosSale.toLocaleString()} change={100} icon={<Receipt size={20} />} />
+      </div>
     </div>
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard title="Online Sold" value={stats.onlineSold.toLocaleString()} change={0} icon={<ShoppingCart size={20} />} />
-      <StatCard title="Orders" value={statusCounts['All'].toString()} change={-77.78} icon={<Truck size={20} />} />
-      <StatCard title="Customers" value={stats.customers.toString()} change={-100} icon={<Users size={20} />} />
+      <StatCard title="Orders" value={statusCounts['All'].toString()} change={0} icon={<Truck size={20} />} />
+      <StatCard title="Customers" value={stats.customers.toString()} change={0} icon={<Users size={20} />} />
       <StatCard title="Total Products" value={stats.totalProducts.toString()} change={100} icon={<Package size={20} />} />
     </div>
 
     {loadingData && (
       <div className="flex items-center justify-center gap-2 p-4 bg-orange-50 text-orange-600 rounded-xl border border-orange-100 animate-pulse">
         <Loader2 size={16} className="animate-spin" />
-        <span className="text-sm font-bold">Synchronizing with WordPress Store...</span>
+        <span className="text-sm font-bold">Synchronizing with WordPress & Courier...</span>
       </div>
     )}
 
@@ -93,9 +69,9 @@ const DashboardContent: React.FC<{
       <div className="lg:col-span-4 bg-white p-6 rounded-xl border border-gray-100 flex flex-col">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Week Earnings</h3>
-          <select className="text-[11px] border-none bg-gray-50 rounded px-2 py-1 outline-none">
-            <option>Week</option>
-          </select>
+          <button onClick={onRefresh} className="p-1 hover:bg-gray-100 rounded">
+            <RefreshCcw size={12} className={loadingData ? 'animate-spin' : ''} />
+          </button>
         </div>
         <p className="text-2xl font-bold text-gray-800 mb-4">৳{(stats.totalPosSale / 10).toLocaleString()}</p>
         <div className="flex-1 min-h-[100px]">
@@ -184,24 +160,23 @@ const App: React.FC = () => {
   const [activePage, setActivePage] = useState('dashboard');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState('All');
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
-    netProfit: 162808,
-    grossProfit: 163308,
-    totalExpenses: 500,
-    totalPosSale: 156808,
-    onlineSold: 25080,
-    orders: INITIAL_ORDERS.length,
-    customers: 1,
-    totalProducts: 13
+    netProfit: 0,
+    grossProfit: 0,
+    totalExpenses: 0,
+    totalPosSale: 0,
+    onlineSold: 0,
+    orders: 0,
+    customers: 0,
+    totalProducts: 0
   });
 
   const [aiInsights, setAiInsights] = useState<string[]>([]);
   const [loadingInsights, setLoadingInsights] = useState(true);
 
-  // Derive unique customers from orders
   const customers = useMemo(() => {
     const customerMap = new Map<string, Customer>();
     orders.forEach(o => {
@@ -215,47 +190,51 @@ const App: React.FC = () => {
     return Array.from(customerMap.values());
   }, [orders]);
 
+  const loadAllData = async () => {
+    const config = await getWPConfig();
+    if (!config) return;
+
+    setLoadingData(true);
+    try {
+      const [wpOrders, wpProducts] = await Promise.all([
+        fetchOrdersFromWP(),
+        fetchProductsFromWP()
+      ]);
+      
+      const enrichedOrders = wpOrders.map(order => ({
+        ...order,
+        products: order.products.map(p => {
+          const match = wpProducts.find(invP => invP.id === p.id);
+          return match ? { ...p, img: match.img } : p;
+        })
+      }));
+
+      // Now sync these orders with Steadfast Courier API
+      const syncedOrders = await syncOrderStatusWithCourier(enrichedOrders);
+
+      setOrders(syncedOrders);
+      setProducts(wpProducts);
+      
+      const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
+      setStats({
+        totalPosSale: totalSales,
+        netProfit: totalSales * 0.4,
+        grossProfit: totalSales * 0.45,
+        totalExpenses: syncedOrders.length * 5,
+        onlineSold: totalSales * 0.2,
+        orders: syncedOrders.length,
+        customers: new Set(syncedOrders.map(o => o.customer.email)).size,
+        totalProducts: wpProducts.length
+      });
+    } catch (err) {
+      console.error("Sync failed:", err);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   useEffect(() => {
-    const loadWPData = async () => {
-      const config = await getWPConfig();
-      if (!config) return;
-
-      setLoadingData(true);
-      try {
-        const [wpOrders, wpProducts] = await Promise.all([
-          fetchOrdersFromWP(),
-          fetchProductsFromWP()
-        ]);
-        
-        const enrichedOrders = wpOrders.map(order => ({
-          ...order,
-          products: order.products.map(p => {
-            const match = wpProducts.find(invP => invP.id === p.id);
-            return match ? { ...p, img: match.img } : p;
-          })
-        }));
-
-        setOrders(enrichedOrders);
-        setProducts(wpProducts);
-        
-        const totalSales = wpOrders.reduce((acc, o) => acc + o.total, 0);
-        setStats(prev => ({
-          ...prev,
-          totalPosSale: totalSales,
-          netProfit: totalSales * 0.4,
-          grossProfit: totalSales * 0.45,
-          orders: wpOrders.length,
-          customers: new Set(wpOrders.map(o => o.customer.email)).size,
-          totalProducts: wpProducts.length
-        }));
-      } catch (err) {
-        console.error("Auto-sync failed:", err);
-      } finally {
-        setLoadingData(false);
-      }
-    };
-
-    loadWPData();
+    loadAllData();
   }, []);
 
   const statusCounts = useMemo(() => {
@@ -284,6 +263,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const fetchInsights = async () => {
+      if (stats.orders === 0) return;
       setLoadingInsights(true);
       const insights = await getBusinessInsights(stats);
       setAiInsights(insights);
@@ -323,6 +303,7 @@ const App: React.FC = () => {
             aiInsights={aiInsights} 
             statusCounts={statusCounts} 
             loadingData={loadingData}
+            onRefresh={loadAllData}
           />
         );
       case 'analytics':
@@ -351,6 +332,7 @@ const App: React.FC = () => {
             aiInsights={aiInsights} 
             statusCounts={statusCounts} 
             loadingData={loadingData}
+            onRefresh={loadAllData}
           />
         );
     }

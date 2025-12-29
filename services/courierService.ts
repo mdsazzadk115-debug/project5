@@ -40,7 +40,7 @@ export const saveCourierConfig = async (config: CourierConfig) => {
 };
 
 // Internal function to save tracking info locally
-const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string) => {
+export const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string) => {
   try {
     await fetch('api/update_order_courier.php', {
       method: 'POST',
@@ -74,13 +74,12 @@ export const createSteadfastOrder = async (order: Order) => {
         recipient_phone: order.customer.phone,
         recipient_address: order.address,
         cod_amount: order.total,
-        note: `Order from Dashboard - Method: ${order.paymentMethod}`
+        note: `Order from Dashboard`
       })
     });
 
     const result = await response.json();
     
-    // If successful, save the tracking code to our MySQL database
     if (result.status === 200 && result.consignment) {
       await saveTrackingLocally(
         order.id, 
@@ -93,26 +92,6 @@ export const createSteadfastOrder = async (order: Order) => {
   } catch (error) {
     console.error("Steadfast Order Creation Error:", error);
     throw error;
-  }
-};
-
-export const getCourierBalance = async () => {
-  const config = await getCourierConfig();
-  if (!config || !config.apiKey) return 0;
-
-  try {
-    const response = await fetch(`${BASE_URL}/get_balance`, {
-      method: 'GET',
-      headers: {
-        'Api-Key': config.apiKey,
-        'Secret-Key': config.secretKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = await response.json();
-    return data.current_balance || 0;
-  } catch (error) {
-    return 0;
   }
 };
 
@@ -132,5 +111,62 @@ export const getDeliveryStatus = async (trackingCode: string) => {
     return await response.json();
   } catch (error) {
     return null;
+  }
+};
+
+// This function loops through orders and updates their status if they have tracking
+export const syncOrderStatusWithCourier = async (orders: Order[]) => {
+  const activeOrders = orders.filter(o => 
+    o.courier_tracking_code && 
+    !['Delivered', 'Cancelled', 'Returned'].includes(o.status)
+  );
+
+  if (activeOrders.length === 0) return orders;
+
+  const updatedOrders = [...orders];
+
+  for (let order of activeOrders) {
+    const statusData = await getDeliveryStatus(order.courier_tracking_code!);
+    if (statusData && statusData.status === 200 && statusData.delivery_status) {
+      const courierStatus = statusData.delivery_status;
+      
+      // Map Steadfast status to Dashboard status
+      let newStatus: Order['status'] = order.status;
+      if (courierStatus.includes('delivered')) newStatus = 'Delivered';
+      else if (courierStatus.includes('cancelled')) newStatus = 'Cancelled';
+      else if (courierStatus.includes('return')) newStatus = 'Returned';
+      else if (courierStatus.includes('transit') || courierStatus.includes('shipping')) newStatus = 'Shipping';
+
+      if (newStatus !== order.status) {
+        const idx = updatedOrders.findIndex(o => o.id === order.id);
+        if (idx !== -1) {
+          updatedOrders[idx] = { ...updatedOrders[idx], status: newStatus, courier_status: courierStatus };
+          // Update local MySQL database
+          await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus);
+        }
+      }
+    }
+  }
+
+  return updatedOrders;
+};
+
+export const getCourierBalance = async () => {
+  const config = await getCourierConfig();
+  if (!config || !config.apiKey) return 0;
+
+  try {
+    const response = await fetch(`${BASE_URL}/get_balance`, {
+      method: 'GET',
+      headers: {
+        'Api-Key': config.apiKey,
+        'Secret-Key': config.secretKey,
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = await response.json();
+    return data.current_balance || 0;
+  } catch (error) {
+    return 0;
   }
 };

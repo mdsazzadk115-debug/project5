@@ -56,13 +56,14 @@ export const saveWPConfig = async (config: WPConfig) => {
   await saveSetting('wp_config', config);
 };
 
-// Helper to fetch local order data (courier tracking) from MySQL
-const fetchLocalOrderData = async (): Promise<any[]> => {
+// Fetch local order tracking info from our MySQL database
+const fetchLocalTrackingData = async (): Promise<any[]> => {
   try {
-    // In a real app, you might want a specific api/get_orders.php
-    // For now, we assume settings or a similar mechanism handles the sync
-    return []; 
+    const res = await fetch(`api/get_local_orders.php`);
+    if (!res.ok) return [];
+    return await res.json();
   } catch (e) {
+    console.error("Error fetching local tracking data:", e);
     return [];
   }
 };
@@ -72,6 +73,7 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
     const config = await getWPConfig();
     if (!config || !config.url) return [];
 
+    const localTracking = await fetchLocalTrackingData();
     const { url, consumerKey, consumerSecret } = config;
     const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
     const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
@@ -81,15 +83,30 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
     const allWcOrders = await response.json();
 
     return allWcOrders.map((wc: any): Order => {
+      // Find tracking info for this order if it exists
+      const tracking = localTracking.find(t => t.id === wc.id.toString());
+      
       let mappedStatus: Order['status'] = 'Pending';
-      switch (wc.status) {
-        case 'processing': mappedStatus = 'Packaging'; break;
-        case 'completed': mappedStatus = 'Delivered'; break;
-        case 'on-hold': mappedStatus = 'Pending'; break;
-        case 'cancelled': mappedStatus = 'Cancelled'; break;
-        case 'refunded': mappedStatus = 'Returned'; break;
-        case 'failed': mappedStatus = 'Rejected'; break;
-        default: mappedStatus = 'Pending';
+      
+      // If we have tracking info, use its status logic
+      if (tracking && tracking.courier_status) {
+        const cs = tracking.courier_status.toLowerCase();
+        if (cs.includes('delivered')) mappedStatus = 'Delivered';
+        else if (cs.includes('cancelled')) mappedStatus = 'Cancelled';
+        else if (cs.includes('return')) mappedStatus = 'Returned';
+        else if (cs.includes('transit') || cs.includes('shipping')) mappedStatus = 'Shipping';
+        else mappedStatus = 'Packaging';
+      } else {
+        // Fallback to WooCommerce status
+        switch (wc.status) {
+          case 'processing': mappedStatus = 'Packaging'; break;
+          case 'completed': mappedStatus = 'Delivered'; break;
+          case 'on-hold': mappedStatus = 'Pending'; break;
+          case 'cancelled': mappedStatus = 'Cancelled'; break;
+          case 'refunded': mappedStatus = 'Returned'; break;
+          case 'failed': mappedStatus = 'Rejected'; break;
+          default: mappedStatus = 'Pending';
+        }
       }
 
       return {
@@ -118,7 +135,9 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         discount: parseFloat(wc.discount_total) || 0,
         total: parseFloat(wc.total),
         status: mappedStatus,
-        statusHistory: { placed: new Date(wc.date_created).toLocaleDateString() }
+        statusHistory: { placed: new Date(wc.date_created).toLocaleDateString() },
+        courier_tracking_code: tracking?.courier_tracking_code || undefined,
+        courier_status: tracking?.courier_status || undefined
       };
     });
   } catch (error) {
