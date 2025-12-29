@@ -170,7 +170,7 @@ export const TopBar: React.FC = () => {
                   <div className="bg-blue-50 p-3 rounded-lg flex gap-3 text-blue-600">
                     <Truck size={16} className="shrink-0" />
                     <p className="text-[10px] leading-relaxed">
-                      Collect these keys from <span className="font-bold">Steadfast Panel > Settings > API</span>.
+                      Collect these keys from <span className="font-bold">Steadfast Panel &gt; Settings &gt; API</span>.
                     </p>
                   </div>
                 </>
