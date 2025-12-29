@@ -29,7 +29,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedProduct, setSelectedProduct] = useState<string>('All');
-  const [selectedPhones, setSelectedPhones] = useState<Set<string>>(new Set());
+  // Explicitly initialize Set with string type to avoid inference issues
+  const [selectedPhones, setSelectedPhones] = useState<Set<string>>(new Set<string>());
   const [message, setMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -93,14 +94,14 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
 
   const toggleSelectAll = () => {
     if (selectedPhones.size === filteredCustomers.length) {
-      setSelectedPhones(new Set());
+      setSelectedPhones(new Set<string>());
     } else {
-      setSelectedPhones(new Set(filteredCustomers.map(c => c.phone)));
+      setSelectedPhones(new Set<string>(filteredCustomers.map(c => c.phone)));
     }
   };
 
   const toggleSelectCustomer = (phone: string) => {
-    const newSet = new Set(selectedPhones);
+    const newSet = new Set<string>(selectedPhones);
     if (newSet.has(phone)) {
       newSet.delete(phone);
     } else {
@@ -135,7 +136,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     setIsSending(true);
     setSendLogs([]);
     
-    const phones = Array.from(selectedPhones);
+    // Explicitly cast to string[] to resolve inference issues causing 'unknown' types in loops
+    const phones = Array.from(selectedPhones) as string[];
     let successCount = 0;
 
     for (const phone of phones) {
@@ -145,7 +147,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
         successCount++;
         setSendLogs(prev => [...prev, { phone, status: 'sent' }]);
       } else {
-        setSendLogs(prev => [...prev, { phone, status: 'failed' }]);
+        // Fix: Explicitly ensure phone is treated as string to satisfy log item type requirements
+        setSendLogs(prev => [...prev, { phone: phone as string, status: 'failed' }]);
       }
       // Small delay to prevent rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -153,7 +156,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     
     setIsSending(false);
     alert(`Process completed. ${successCount} out of ${selectedPhones.size} messages sent.`);
-    setSelectedPhones(new Set());
+    setSelectedPhones(new Set<string>());
     setMessage('');
   };
 

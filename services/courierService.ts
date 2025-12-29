@@ -39,6 +39,23 @@ export const saveCourierConfig = async (config: CourierConfig) => {
   await saveSetting('courier_config', config);
 };
 
+// Internal function to save tracking info locally
+const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string) => {
+  try {
+    await fetch('api/update_order_courier.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: orderId,
+        tracking_code: trackingCode,
+        status: status
+      })
+    });
+  } catch (e) {
+    console.error("Local DB update failed:", e);
+  }
+};
+
 export const createSteadfastOrder = async (order: Order) => {
   const config = await getCourierConfig();
   if (!config || !config.apiKey) throw new Error("Courier API not configured");
@@ -61,7 +78,18 @@ export const createSteadfastOrder = async (order: Order) => {
       })
     });
 
-    return await response.json();
+    const result = await response.json();
+    
+    // If successful, save the tracking code to our MySQL database
+    if (result.status === 200 && result.consignment) {
+      await saveTrackingLocally(
+        order.id, 
+        result.consignment.tracking_code, 
+        result.consignment.status
+      );
+    }
+
+    return result;
   } catch (error) {
     console.error("Steadfast Order Creation Error:", error);
     throw error;
