@@ -13,7 +13,8 @@ import {
   ChevronRight,
   Truck,
   Minus,
-  MessageSquare
+  MessageSquare,
+  ShieldCheck
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -147,6 +148,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
           active={activePage === 'analytics'} 
           onClick={() => {
             onNavigate('analytics');
+            setIsOrderOpen(false);
+            setIsProductsOpen(false);
+          }}
+        />
+        <SidebarItem 
+          icon={<Truck size={18} />} 
+          label="Courier" 
+          active={activePage === 'courier'} 
+          onClick={() => {
+            onNavigate('courier');
             setIsOrderOpen(false);
             setIsProductsOpen(false);
           }}

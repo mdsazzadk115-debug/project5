@@ -7,26 +7,43 @@ export interface SMSConfig {
   senderId: string;
 }
 
-const fetchSetting = async (key: string) => {
+// Internal helper to fetch and double-parse settings (envelope + content)
+const fetchSetting = async (key: string): Promise<any> => {
   try {
     const res = await fetch(`api/settings.php?key=${key}`);
-    const data = await res.json();
-    return data ? JSON.parse(data) : null;
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      // First parse: extracts the value (which is likely a JSON string itself)
+      const data = JSON.parse(text);
+      // Second parse: converts the stored JSON string back into its original object form
+      // Casting 'data' to string because stored settings are JSON-encoded twice
+      return data ? JSON.parse(data as string) : null;
+    } catch (e) {
+      console.error(`Error parsing setting ${key}:`, e);
+      return null;
+    }
   } catch (e) {
+    console.error(`Error fetching setting ${key}:`, e);
     return null;
   }
 };
 
 const saveSetting = async (key: string, value: any) => {
-  await fetch(`api/settings.php`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value: JSON.stringify(value) })
-  });
+  try {
+    await fetch(`api/settings.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value: JSON.stringify(value) })
+    });
+  } catch (e) {
+    console.error(`Error saving setting ${key}:`, e);
+  }
 };
 
 export const getSMSConfig = async (): Promise<SMSConfig | null> => {
-  return await fetchSetting('sms_config');
+  return await fetchSetting('sms_config') as SMSConfig | null;
 };
 
 export const saveSMSConfig = async (config: SMSConfig) => {
@@ -59,6 +76,7 @@ export const sendActualSMS = async (config: SMSConfig, phone: string, message: s
     const response = await fetch(url.toString());
     return response.ok;
   } catch (error) {
+    console.error("SMS sending error:", error);
     return false;
   }
 };

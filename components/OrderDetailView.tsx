@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Printer, 
   Info, 
@@ -9,9 +9,14 @@ import {
   Search,
   Package,
   Truck,
-  Heart
+  Heart,
+  Send,
+  Loader2,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 import { Order } from '../types';
+import { createSteadfastOrder } from '../services/courierService';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -19,8 +24,10 @@ interface OrderDetailViewProps {
 }
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack }) => {
+  const [isShipping, setIsShipping] = useState(false);
+  const [shippingResult, setShippingResult] = useState<{tracking: string, id: number} | null>(order.courier_tracking_code ? {tracking: order.courier_tracking_code, id: 0} : null);
+
   const isStepCompleted = (step: 'placed' | 'packaging' | 'shipping' | 'delivered') => {
-    // Explicitly define statusMap to handle all valid Order statuses including 'Cancelled'
     const statusMap: Record<Order['status'], string[]> = {
       'Pending': ['placed'],
       'Packaging': ['placed', 'packaging'],
@@ -33,19 +40,61 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
     return statusMap[order.status]?.includes(step) || false;
   };
 
+  const handleSendToSteadfast = async () => {
+    if (shippingResult) return;
+    setIsShipping(true);
+    try {
+      const res = await createSteadfastOrder(order);
+      if (res.status === 200) {
+        setShippingResult({
+          tracking: res.consignment.tracking_code,
+          id: res.consignment.consignment_id
+        });
+        alert("Sent to Steadfast Courier Successfully!");
+      } else {
+        alert("Error: " + (res.message || "Failed to create consignment"));
+      }
+    } catch (error: any) {
+      alert("Courier Config Error: Please check your API keys in Settings.");
+    } finally {
+      setIsShipping(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 pb-12">
       {/* Header Info */}
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm flex justify-between items-start">
         <div className="space-y-4 w-full">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-medium">
-              <span className="text-orange-600 font-bold">Order ID: {order.id}</span>
-              <span className="text-gray-400 ml-4">Date: {order.date}</span>
-            </h2>
-            <button className="bg-orange-600 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md hover:bg-orange-700 transition-colors">
-              <Printer size={16} /> Print
-            </button>
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-medium">
+                <span className="text-orange-600 font-bold">Order ID: {order.id}</span>
+                <span className="text-gray-400 ml-4">Date: {order.date}</span>
+              </h2>
+              {shippingResult && (
+                <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-100">
+                  <Truck size={12} /> Tracking: {shippingResult.tracking}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleSendToSteadfast}
+                disabled={!!shippingResult || isShipping}
+                className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
+                  shippingResult 
+                  ? 'bg-green-100 text-green-600 cursor-default' 
+                  : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50'
+                }`}
+              >
+                {isShipping ? <Loader2 size={16} className="animate-spin" /> : shippingResult ? <CheckCircle size={16} /> : <Send size={16} />}
+                {shippingResult ? 'Sent to Courier' : 'Send to Steadfast'}
+              </button>
+              <button className="bg-white border border-gray-200 text-gray-600 px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50 transition-colors">
+                <Printer size={16} /> Print Invoice
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-gray-400 italic">
@@ -123,8 +172,18 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Order Items */}
         <div className="col-span-12 lg:col-span-9 bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-gray-50 bg-gray-50/30">
+          <div className="p-4 border-b border-gray-50 bg-gray-50/30 flex justify-between items-center">
             <h3 className="text-sm font-bold text-gray-700">Order Item</h3>
+            {shippingResult && (
+              <a 
+                href={`https://steadfast.com.bd/tracking/${shippingResult.tracking}`} 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
+              >
+                Track in Steadfast <ExternalLink size={12} />
+              </a>
+            )}
           </div>
           <table className="w-full text-left">
             <thead className="bg-gray-50/50">

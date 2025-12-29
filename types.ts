@@ -50,6 +50,8 @@ export interface Order {
   total: number;
   status: 'Shipping' | 'Rejected' | 'Packaging' | 'Pending' | 'Delivered' | 'Returned' | 'Cancelled';
   statusHistory: OrderStatusHistory;
+  courier_tracking_code?: string;
+  courier_status?: string;
 }
 
 export interface DashboardStats {
@@ -61,4 +63,9 @@ export interface DashboardStats {
   orders: number;
   customers: number;
   totalProducts: number;
+}
+
+export interface CourierConfig {
+  apiKey: string;
+  secretKey: string;
 }

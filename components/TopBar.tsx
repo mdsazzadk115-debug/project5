@@ -1,25 +1,34 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Bell, Globe, RefreshCcw, Calendar, ChevronDown, LayoutGrid, Settings, X } from 'lucide-react';
+import { Search, Bell, Globe, RefreshCcw, Calendar, ChevronDown, LayoutGrid, Settings, X, Truck } from 'lucide-react';
 import { getWPConfig, saveWPConfig, WPConfig } from '../services/wordpressService';
+import { getCourierConfig, saveCourierConfig } from '../services/courierService';
+import { CourierConfig } from '../types';
 
 export const TopBar: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<'wp' | 'courier'>('wp');
   const [config, setConfig] = useState<WPConfig>({ url: '', consumerKey: '', consumerSecret: '' });
+  const [courierConfig, setCourierConfig] = useState<CourierConfig>({ apiKey: '', secretKey: '' });
 
-  // Correctly await the async getWPConfig call inside useEffect
   useEffect(() => {
     const loadConfig = async () => {
       const saved = await getWPConfig();
       if (saved) setConfig(saved);
+      const savedCourier = await getCourierConfig();
+      if (savedCourier) setCourierConfig(savedCourier);
     };
     loadConfig();
   }, []);
 
   const handleSave = () => {
-    saveWPConfig(config);
+    if (activeTab === 'wp') {
+      saveWPConfig(config);
+    } else {
+      saveCourierConfig(courierConfig);
+    }
     setShowSettings(false);
-    window.location.reload(); // Refresh to trigger fetch with new keys
+    window.location.reload();
   };
 
   return (
@@ -39,7 +48,7 @@ export const TopBar: React.FC = () => {
           className="flex items-center gap-2 text-gray-500 hover:text-orange-600 cursor-pointer transition-colors"
         >
           <Settings size={16} />
-          <span className="text-sm font-medium">WP Connect</span>
+          <span className="text-sm font-medium">Connections</span>
         </div>
 
         <div className="flex items-center gap-2 text-gray-500 hover:text-orange-600 cursor-pointer transition-colors">
@@ -79,44 +88,94 @@ export const TopBar: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <div>
-                <h2 className="text-lg font-bold text-gray-800">WordPress Settings</h2>
-                <p className="text-xs text-gray-500">Connect your WooCommerce store</p>
+                <h2 className="text-lg font-bold text-gray-800">Connection Settings</h2>
+                <p className="text-xs text-gray-500">Manage your third-party integrations</p>
               </div>
               <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
                 <X size={20} />
               </button>
             </div>
+            
+            <div className="flex border-b border-gray-100">
+              <button 
+                onClick={() => setActiveTab('wp')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${activeTab === 'wp' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+              >
+                WordPress
+              </button>
+              <button 
+                onClick={() => setActiveTab('courier')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${activeTab === 'courier' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+              >
+                Steadfast Courier
+              </button>
+            </div>
+
             <div className="p-6 space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-400 uppercase">Site URL</label>
-                <input 
-                  type="text" 
-                  placeholder="https://yourstore.com"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
-                  value={config.url}
-                  onChange={(e) => setConfig({...config, url: e.target.value})}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-400 uppercase">Consumer Key</label>
-                <input 
-                  type="password" 
-                  placeholder="ck_xxxxxxxx..."
-                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
-                  value={config.consumerKey}
-                  onChange={(e) => setConfig({...config, consumerKey: e.target.value})}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-400 uppercase">Consumer Secret</label>
-                <input 
-                  type="password" 
-                  placeholder="cs_xxxxxxxx..."
-                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
-                  value={config.consumerSecret}
-                  onChange={(e) => setConfig({...config, consumerSecret: e.target.value})}
-                />
-              </div>
+              {activeTab === 'wp' ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase">Site URL</label>
+                    <input 
+                      type="text" 
+                      placeholder="https://yourstore.com"
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={config.url}
+                      onChange={(e) => setConfig({...config, url: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase">Consumer Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="ck_xxxxxxxx..."
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={config.consumerKey}
+                      onChange={(e) => setConfig({...config, consumerKey: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase">Consumer Secret</label>
+                    <input 
+                      type="password" 
+                      placeholder="cs_xxxxxxxx..."
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={config.consumerSecret}
+                      onChange={(e) => setConfig({...config, consumerSecret: e.target.value})}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase">API Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="Your Steadfast API Key"
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={courierConfig.apiKey}
+                      onChange={(e) => setCourierConfig({...courierConfig, apiKey: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase">Secret Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="Your Steadfast Secret Key"
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={courierConfig.secretKey}
+                      onChange={(e) => setCourierConfig({...courierConfig, secretKey: e.target.value})}
+                    />
+                  </div>
+                  <div className="bg-blue-50 p-3 rounded-lg flex gap-3 text-blue-600">
+                    <Truck size={16} className="shrink-0" />
+                    <p className="text-[10px] leading-relaxed">
+                      Collect these keys from <span className="font-bold">Steadfast Panel > Settings > API</span>.
+                    </p>
+                  </div>
+                </>
+              )}
+
               <div className="pt-4">
                 <button 
                   onClick={handleSave}
@@ -124,9 +183,6 @@ export const TopBar: React.FC = () => {
                 >
                   Save & Connect
                 </button>
-                <p className="text-[10px] text-center text-gray-400 mt-4 leading-relaxed px-4">
-                  Go to <span className="font-bold">WooCommerce &gt; Settings &gt; Advanced &gt; REST API</span> in your WordPress dashboard to generate keys.
-                </p>
               </div>
             </div>
           </div>

@@ -139,7 +139,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     let successCount = 0;
 
     for (const phone of phones) {
-      const success = await sendActualSMS(config, phone, message);
+      // Fix: config is known to be non-null and correctly typed after initial check
+      const success = await sendActualSMS(config as SMSConfig, phone, message);
       if (success) {
         successCount++;
         setSendLogs(prev => [...prev, { phone, status: 'sent' }]);

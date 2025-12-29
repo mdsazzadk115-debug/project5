@@ -9,6 +9,7 @@ import { OrderDashboardView } from './components/OrderDashboardView';
 import { OrderDetailView } from './components/OrderDetailView';
 import { ProductListView } from './components/ProductListView';
 import { BulkSMSView } from './components/BulkSMSView';
+import { CourierDashboardView } from './components/CourierDashboardView';
 import { 
   Briefcase, 
   DollarSign, 
@@ -216,7 +217,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadWPData = async () => {
-      // Correctly await the async getWPConfig call in loadWPData
       const config = await getWPConfig();
       if (!config) return;
 
@@ -329,6 +329,8 @@ const App: React.FC = () => {
         return <AnalyticsView />;
       case 'bulk-sms':
         return <BulkSMSView customers={customers} orders={orders} products={products} />;
+      case 'courier':
+        return <CourierDashboardView />;
       case 'orders':
         return (
           <OrderDashboardView 
