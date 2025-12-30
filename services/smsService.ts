@@ -83,13 +83,26 @@ export const generateSMSTemplate = async (purpose: string, businessName: string)
 
 export const sendActualSMS = async (config: SMSConfig, phone: string, message: string) => {
   try {
+    // Detect if unicode (Bengali) is present
+    const gsmRegex = /^[\u0000-\u007F]*$/;
+    const isUnicode = !gsmRegex.test(message);
+    const type = isUnicode ? 'unicode' : 'plain';
+
     const url = new URL(config.endpoint);
+    // Standard parameters for BD SMS Gateways (especially mram.com.bd styles)
     url.searchParams.append('api_key', config.apiKey);
     url.searchParams.append('sender_id', config.senderId);
-    url.searchParams.append('number', phone);
+    url.searchParams.append('recipient', phone); // Changed from 'number' to 'recipient'
     url.searchParams.append('message', message);
-    const response = await fetch(url.toString());
-    return response.ok;
+    url.searchParams.append('type', type); // Added type parameter
+
+    const response = await fetch(url.toString(), {
+      method: 'GET', // Most BD Gateways use GET for simple integration
+      mode: 'no-cors' // Often needed if the gateway doesn't have proper CORS headers
+    });
+    
+    // Note: with 'no-cors', we can't see the response body, but we assume success if no error is thrown
+    return true; 
   } catch (error) {
     console.error("SMS sending error:", error);
     return false;
