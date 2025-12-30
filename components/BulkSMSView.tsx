@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, 
@@ -20,7 +21,8 @@ import {
   Plus,
   FileText,
   Trash2,
-  User
+  User,
+  Info
 } from 'lucide-react';
 import { Customer, Order, InventoryProduct, Product } from '../types';
 import { 
@@ -82,6 +84,34 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     loadData();
   }, []);
 
+  // SMS Calculation Logic
+  const smsStats = useMemo(() => {
+    if (!message) return { count: 0, segments: 1, isUnicode: false, limit: 160 };
+
+    // Detect Unicode (Basic check for characters outside GSM-7 set, like Bengali)
+    // GSM-7 Basic Set: @£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà
+    const gsmRegex = /^[\u0040\u00A3\u0024\u00A5\u00E8\u00E9\u00F9\u00EC\u00F2\u00C7\u000A\u00D8\u00F8\u000D\u00C5\u00E5\u0394\u005F\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039E\u00C6\u00E6\u00DF\u00C9\u0020\u0021\u0022\u0023\u00A4\u0025\u0026\u0027\u0028\u0029\u002A\u002B\u002C\u002D\u002E\u002F\u0030\u0031\u0032\u0033\u0034\u0035\u0036\u0037\u0038\u0039\u003A\u003B\u003C\u003D\u003E\u003F\u00A1\u0041\u0042\u0043\u0044\u0045\u0046\u0047\u0048\u0049\u004A\u004B\u004C\u004D\u004E\u004F\u0050\u0051\u0052\u0053\u0054\u0055\u0056\u0057\u0058\u0059\u005A\u00C4\u00D6\u00D1\u00DC\u00A7\u00BF\u0061\u0062\u0063\u0064\u0065\u0066\u0067\u0068\u0069\u006A\u006B\u006C\u006D\u006E\u006F\u0070\u0071\u0072\u0073\u0074\u0075\u0076\u0077\u0078\u0079\u007A\u00E4\u00F6\u00F1\u00FC\u00E0]*$/;
+    const isUnicode = !gsmRegex.test(message);
+    
+    const count = message.length;
+    let segments = 1;
+    let limit = 160;
+
+    if (isUnicode) {
+      limit = 70;
+      if (count > 70) {
+        segments = Math.ceil(count / 67);
+      }
+    } else {
+      limit = 160;
+      if (count > 160) {
+        segments = Math.ceil(count / 153);
+      }
+    }
+
+    return { count, segments, isUnicode, limit };
+  }, [message]);
+
   // Parse manual input whenever it changes
   useEffect(() => {
     const numbers = manualInput
@@ -98,12 +128,6 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     const cats = new Set(products.map(p => p.category));
     return ['All', ...Array.from(cats)];
   }, [products]);
-
-  // Get products filtered by current category selection
-  const filteredProductsByCat = useMemo(() => {
-    if (selectedCategory === 'All') return products;
-    return products.filter(p => p.category === selectedCategory);
-  }, [products, selectedCategory]);
 
   // Filtering Logic for Database Customers
   const filteredCustomers = useMemo(() => {
@@ -180,7 +204,6 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       const after = text.substring(end, text.length);
       setMessage(before + "[name]" + after);
       
-      // Reset focus and cursor position after state update
       setTimeout(() => {
         if (messageAreaRef.current) {
           messageAreaRef.current.focus();
@@ -239,16 +262,12 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     setIsSending(true);
     setSendLogs([]);
     
-    // Explicitly cast to string array to avoid 'unknown' type issues in the loop
     const phones = Array.from(selectedPhones) as string[];
     let successCount = 0;
 
     for (const phone of phones) {
-      // Find customer name if exists in database
       const customer = customers.find(c => c.phone === phone);
       const customerName = customer ? customer.name.split(' ')[0] : 'Customer';
-      
-      // Personalized message
       const personalizedMessage = message.replace(/\[name\]/g, customerName);
 
       const success = await sendActualSMS(config as SMSConfig, phone, personalizedMessage);
@@ -482,9 +501,14 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                 <MessageSquare size={16} className="text-orange-500" /> Compose Message
               </h3>
-              <span className={`text-[10px] font-bold ${message.length > 160 ? 'text-red-500' : 'text-gray-400'}`}>
-                {message.length} / 160 Characters
-              </span>
+              <div className="flex items-center gap-2">
+                <div className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${smsStats.segments > 1 ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+                  {smsStats.segments} SMS
+                </div>
+                <span className={`text-[10px] font-bold transition-colors ${smsStats.count > (smsStats.limit * 3) ? 'text-red-500' : 'text-gray-400'}`}>
+                  {smsStats.count} / {smsStats.limit}
+                </span>
+              </div>
             </div>
 
             <div className="relative">
@@ -493,7 +517,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Type your message here..."
-                className="w-full h-40 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-1 focus:ring-orange-500 resize-none pb-12"
+                className={`w-full h-40 p-4 bg-gray-50 border rounded-xl text-sm outline-none transition-all resize-none pb-12 focus:ring-1 focus:ring-orange-500 ${smsStats.isUnicode ? 'border-blue-100' : 'border-gray-100'}`}
               />
               <div className="absolute bottom-3 left-3 flex gap-2">
                 <button 
@@ -503,11 +527,22 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                   <User size={10} /> [name] Name Tag
                 </button>
               </div>
+              {smsStats.isUnicode && (
+                <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-blue-500 text-white text-[8px] font-bold rounded-sm uppercase tracking-tighter">
+                  Unicode
+                </div>
+              )}
             </div>
             
-            <p className="text-[10px] text-gray-400 leading-tight">
-              <strong>Personalization:</strong> Use <span className="text-orange-600 font-bold">[name]</span> to automatically insert the customer's first name.
-            </p>
+            <div className="flex items-start gap-2 bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+               <Info size={14} className="text-gray-400 shrink-0 mt-0.5" />
+               <p className="text-[10px] text-gray-500 leading-relaxed italic">
+                 <strong>Dynamic:</strong> <span className="text-orange-600 font-bold">[name]</span> will be replaced by user's first name. 
+                 {smsStats.isUnicode 
+                   ? " Unicode detected: 70 chars per SMS, 67 for multi-part."
+                   : " GSM detected: 160 chars per SMS, 153 for multi-part."}
+               </p>
+            </div>
 
             <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between">
