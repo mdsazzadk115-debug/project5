@@ -88,23 +88,27 @@ export const sendActualSMS = async (config: SMSConfig, phone: string, message: s
     const isUnicode = !gsmRegex.test(message);
     const type = isUnicode ? 'unicode' : 'plain';
 
-    const url = new URL(config.endpoint);
-    // Standard parameters for BD SMS Gateways (especially mram.com.bd styles)
-    url.searchParams.append('api_key', config.apiKey);
-    url.searchParams.append('sender_id', config.senderId);
-    url.searchParams.append('recipient', phone); // Changed from 'number' to 'recipient'
-    url.searchParams.append('message', message);
-    url.searchParams.append('type', type); // Added type parameter
-
-    const response = await fetch(url.toString(), {
-      method: 'GET', // Most BD Gateways use GET for simple integration
-      mode: 'no-cors' // Often needed if the gateway doesn't have proper CORS headers
+    // Instead of direct external fetch which causes CORS issues, 
+    // we call our local PHP proxy.
+    const response = await fetch('api/send_sms.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: config.endpoint,
+        api_key: config.apiKey,
+        sender_id: config.senderId,
+        recipient: phone,
+        message: message,
+        type: type
+      })
     });
     
-    // Note: with 'no-cors', we can't see the response body, but we assume success if no error is thrown
-    return true; 
+    if (!response.ok) return false;
+    
+    const result = await response.json();
+    return result.success === true;
   } catch (error) {
-    console.error("SMS sending error:", error);
+    console.error("SMS proxy sending error:", error);
     return false;
   }
 };
