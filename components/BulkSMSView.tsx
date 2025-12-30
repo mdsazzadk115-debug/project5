@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, 
   Send, 
@@ -14,10 +13,26 @@ import {
   RotateCcw,
   Settings,
   X,
-  AlertCircle
+  AlertCircle,
+  Hash,
+  ClipboardList,
+  UserPlus,
+  Plus,
+  FileText,
+  Trash2,
+  User
 } from 'lucide-react';
-import { Customer, Order, InventoryProduct } from '../types';
-import { generateSMSTemplate, getSMSConfig, saveSMSConfig, SMSConfig, sendActualSMS } from '../services/smsService';
+import { Customer, Order, InventoryProduct, Product } from '../types';
+import { 
+  generateSMSTemplate, 
+  getSMSConfig, 
+  saveSMSConfig, 
+  SMSConfig, 
+  sendActualSMS,
+  getCustomTemplates,
+  saveCustomTemplates,
+  SMSTemplate
+} from '../services/smsService';
 
 interface BulkSMSViewProps {
   customers: Customer[];
@@ -26,11 +41,24 @@ interface BulkSMSViewProps {
 }
 
 export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, products }) => {
+  const [activeTab, setActiveTab] = useState<'database' | 'manual'>('database');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedProduct, setSelectedProduct] = useState<string>('All');
-  // Explicitly initialize Set with string type to avoid inference issues
+  const [selectedOrderCount, setSelectedOrderCount] = useState<string>('All');
+  
+  // Selection states
   const [selectedPhones, setSelectedPhones] = useState<Set<string>>(new Set<string>());
+  
+  // Manual Import states
+  const [manualInput, setManualInput] = useState('');
+  const [manualParsedNumbers, setManualParsedNumbers] = useState<string[]>([]);
+  
+  // Template states
+  const [templates, setTemplates] = useState<SMSTemplate[]>([]);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({ name: '', content: '' });
+
   const [message, setMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -40,14 +68,30 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
   const [showConfig, setShowConfig] = useState(false);
   const [smsConfig, setSmsConfig] = useState<SMSConfig>({ endpoint: '', apiKey: '', senderId: '' });
 
-  // Correctly await the async getSMSConfig call inside useEffect
+  const messageAreaRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
-    const loadConfig = async () => {
-      const saved = await getSMSConfig();
-      if (saved) setSmsConfig(saved);
+    const loadData = async () => {
+      const [savedConfig, savedTemplates] = await Promise.all([
+        getSMSConfig(),
+        getCustomTemplates()
+      ]);
+      if (savedConfig) setSmsConfig(savedConfig);
+      if (savedTemplates) setTemplates(savedTemplates);
     };
-    loadConfig();
+    loadData();
   }, []);
+
+  // Parse manual input whenever it changes
+  useEffect(() => {
+    const numbers = manualInput
+      .split(/[\n,]+/)
+      .map(n => n.trim().replace(/[^\d+]/g, ''))
+      .filter(n => n.length >= 10); 
+    
+    const uniqueNumbers = Array.from(new Set(numbers));
+    setManualParsedNumbers(uniqueNumbers);
+  }, [manualInput]);
 
   // Get unique categories from products
   const categories = useMemo(() => {
@@ -61,7 +105,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     return products.filter(p => p.category === selectedCategory);
   }, [products, selectedCategory]);
 
-  // Filtering Logic for Customers
+  // Filtering Logic for Database Customers
   const filteredCustomers = useMemo(() => {
     return customers.filter(customer => {
       const matchesSearch = 
@@ -69,6 +113,15 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
         customer.phone.includes(searchTerm);
 
       if (!matchesSearch) return false;
+
+      // Filter by Order Count
+      if (selectedOrderCount !== 'All') {
+        if (selectedOrderCount === '4+') {
+          if (customer.orderCount < 4) return false;
+        } else {
+          if (customer.orderCount !== parseInt(selectedOrderCount as string)) return false;
+        }
+      }
 
       const customerOrders = orders.filter(o => o.customer.phone === customer.phone);
       
@@ -80,8 +133,8 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       } 
       else if (selectedCategory !== 'All') {
         const hasBoughtInCategory = customerOrders.some(order => 
-          order.products.some(orderProd => {
-            const productInfo = products.find(p => p.id === orderProd.id || p.name === orderProd.name);
+          order.products.some((orderProd: Product) => {
+            const productInfo = products.find(p => (orderProd.id && p.id === orderProd.id) || p.name === orderProd.name);
             return productInfo?.category === selectedCategory;
           })
         );
@@ -90,9 +143,9 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
 
       return true;
     });
-  }, [customers, searchTerm, selectedCategory, selectedProduct, orders, products]);
+  }, [customers, searchTerm, selectedCategory, selectedProduct, selectedOrderCount, orders, products]);
 
-  const toggleSelectAll = () => {
+  const toggleSelectAllDatabase = () => {
     if (selectedPhones.size === filteredCustomers.length) {
       setSelectedPhones(new Set<string>());
     } else {
@@ -100,7 +153,15 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     }
   };
 
-  const toggleSelectCustomer = (phone: string) => {
+  const toggleSelectManualAll = () => {
+    if (selectedPhones.size === manualParsedNumbers.length) {
+      setSelectedPhones(new Set<string>());
+    } else {
+      setSelectedPhones(new Set<string>(manualParsedNumbers));
+    }
+  };
+
+  const toggleSelectPhone = (phone: string) => {
     const newSet = new Set<string>(selectedPhones);
     if (newSet.has(phone)) {
       newSet.delete(phone);
@@ -108,6 +169,28 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       newSet.add(phone);
     }
     setSelectedPhones(newSet);
+  };
+
+  const insertNameTag = () => {
+    if (messageAreaRef.current) {
+      const start = messageAreaRef.current.selectionStart;
+      const end = messageAreaRef.current.selectionEnd;
+      const text = message;
+      const before = text.substring(0, start);
+      const after = text.substring(end, text.length);
+      setMessage(before + "[name]" + after);
+      
+      // Reset focus and cursor position after state update
+      setTimeout(() => {
+        if (messageAreaRef.current) {
+          messageAreaRef.current.focus();
+          messageAreaRef.current.selectionStart = start + 6;
+          messageAreaRef.current.selectionEnd = start + 6;
+        }
+      }, 0);
+    } else {
+      setMessage(message + "[name]");
+    }
   };
 
   const handleGenerateAI = async (purpose: string) => {
@@ -122,8 +205,28 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     setShowConfig(false);
   };
 
+  const handleAddTemplate = async () => {
+    if (!newTemplate.name || !newTemplate.content) return;
+    const template: SMSTemplate = {
+      id: Date.now().toString(),
+      name: newTemplate.name,
+      content: newTemplate.content
+    };
+    const updated = [...templates, template];
+    setTemplates(updated);
+    await saveCustomTemplates(updated);
+    setNewTemplate({ name: '', content: '' });
+    setShowTemplateModal(false);
+  };
+
+  const deleteTemplate = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = templates.filter(t => t.id !== id);
+    setTemplates(updated);
+    await saveCustomTemplates(updated);
+  };
+
   const handleSendSMS = async () => {
-    // Correctly await the async getSMSConfig call in handleSendSMS
     const config = await getSMSConfig();
     if (!config || !config.apiKey || !config.endpoint) {
       alert("Please configure your SMS API Settings first.");
@@ -136,34 +239,40 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
     setIsSending(true);
     setSendLogs([]);
     
-    // Explicitly cast to string[] to resolve inference issues causing 'unknown' types in loops
+    // Explicitly cast to string array to avoid 'unknown' type issues in the loop
     const phones = Array.from(selectedPhones) as string[];
     let successCount = 0;
 
     for (const phone of phones) {
-      // Fix: config is known to be non-null and correctly typed after initial check
-      const success = await sendActualSMS(config as SMSConfig, phone, message);
+      // Find customer name if exists in database
+      const customer = customers.find(c => c.phone === phone);
+      const customerName = customer ? customer.name.split(' ')[0] : 'Customer';
+      
+      // Personalized message
+      const personalizedMessage = message.replace(/\[name\]/g, customerName);
+
+      const success = await sendActualSMS(config as SMSConfig, phone, personalizedMessage);
       if (success) {
         successCount++;
         setSendLogs(prev => [...prev, { phone, status: 'sent' }]);
       } else {
-        // Fix: Explicitly ensure phone is treated as string to satisfy log item type requirements
-        setSendLogs(prev => [...prev, { phone: phone as string, status: 'failed' }]);
+        setSendLogs(prev => [...prev, { phone, status: 'failed' }]);
       }
-      // Small delay to prevent rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
     
     setIsSending(false);
     alert(`Process completed. ${successCount} out of ${selectedPhones.size} messages sent.`);
     setSelectedPhones(new Set<string>());
     setMessage('');
+    setManualInput('');
   };
 
   const resetFilters = () => {
     setSearchTerm('');
     setSelectedCategory('All');
     setSelectedProduct('All');
+    setSelectedOrderCount('All');
   };
 
   return (
@@ -182,7 +291,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
           </button>
           <div className="px-4 py-2 bg-orange-50 rounded-lg border border-orange-100 flex items-center gap-2">
             <Users size={16} className="text-orange-600" />
-            <span className="text-sm font-bold text-orange-600">{selectedPhones.size} Selected</span>
+            <span className="text-sm font-bold text-orange-600">{selectedPhones.size} Recipient(s) Selected</span>
           </div>
         </div>
       </div>
@@ -204,112 +313,166 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Customer Selection */}
+        {/* Left: Input Selection */}
         <div className="lg:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col h-[650px]">
-          <div className="p-4 border-b border-gray-50 bg-gray-50/30 space-y-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
-                <input 
-                  type="text" 
-                  placeholder="Search name or phone..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+          {/* Tabs */}
+          <div className="flex border-b border-gray-100 bg-gray-50/50">
+            <button 
+              onClick={() => { setActiveTab('database'); setSelectedPhones(new Set()); }}
+              className={`flex-1 py-4 text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${activeTab === 'database' ? 'text-orange-600 bg-white border-b-2 border-orange-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <Users size={14} /> Database Customers
+            </button>
+            <button 
+              onClick={() => { setActiveTab('manual'); setSelectedPhones(new Set()); }}
+              className={`flex-1 py-4 text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${activeTab === 'manual' ? 'text-orange-600 bg-white border-b-2 border-orange-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <ClipboardList size={14} /> Manual Import
+            </button>
+          </div>
+
+          {activeTab === 'database' ? (
+            <>
+              <div className="p-4 border-b border-gray-50 bg-white space-y-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <input 
+                      type="text" 
+                      placeholder="Search name or phone..." 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 bg-white"
+                    />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  </div>
+
+                  <div className="relative">
+                    <select 
+                      value={selectedOrderCount}
+                      onChange={(e) => setSelectedOrderCount(e.target.value)}
+                      className="appearance-none pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-white hover:border-orange-500 transition-colors focus:outline-none"
+                    >
+                      <option value="All">All Orders</option>
+                      <option value="1">1 Order</option>
+                      <option value="2">2 Orders</option>
+                      <option value="3">3 Orders</option>
+                      <option value="4+">4+ Orders</option>
+                    </select>
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  </div>
+
+                  <div className="relative">
+                    <select 
+                      value={selectedCategory}
+                      onChange={(e) => {
+                        setSelectedCategory(e.target.value);
+                        setSelectedProduct('All');
+                      }}
+                      className="appearance-none pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-white hover:border-orange-500 transition-colors focus:outline-none"
+                    >
+                      {categories.map(cat => (
+                        <option key={cat} value={cat}>{cat === 'All' ? 'Select Category' : cat}</option>
+                      ))}
+                    </select>
+                    <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  </div>
+
+                  <button onClick={resetFilters} className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
+                    <RotateCcw size={18} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    Found {filteredCustomers.length} Customers
+                  </span>
+                  <button onClick={toggleSelectAllDatabase} className="text-xs font-bold text-orange-600 hover:bg-orange-50 px-3 py-1 rounded-lg transition-colors">
+                    {selectedPhones.size === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 bg-white shadow-sm z-10">
+                    <tr>
+                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Selected</th>
+                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Customer</th>
+                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Phone</th>
+                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase text-right">Orders</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredCustomers.map((c) => (
+                      <tr 
+                        key={c.phone} 
+                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${selectedPhones.has(c.phone) ? 'bg-orange-50/30' : ''}`}
+                        onClick={() => toggleSelectPhone(c.phone)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedPhones.has(c.phone) ? 'bg-orange-500 border-orange-500' : 'border-gray-200 bg-white'}`}>
+                            {selectedPhones.has(c.phone) && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <img src={c.avatar} alt={c.name} className="w-8 h-8 rounded-full border border-gray-100" />
+                            <span className="text-sm font-medium text-gray-700">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{c.phone}</td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-xs font-bold text-gray-400">{c.orderCount} Orders</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="p-8 flex flex-col h-full bg-white">
+              <div className="space-y-4 flex-1 flex flex-col">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                      <UserPlus size={16} className="text-orange-500" /> Paste Phone Numbers
+                    </h3>
+                    <p className="text-xs text-gray-400">Separate numbers with commas or new lines.</p>
+                  </div>
+                  <div className="px-3 py-1 bg-gray-100 rounded-full text-[10px] font-bold text-gray-500">
+                    {manualParsedNumbers.length} Valid Numbers Detected
+                  </div>
+                </div>
+                
+                <textarea 
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  placeholder="01712xxxxxx,&#10;01923xxxxxx,&#10;01678xxxxxx"
+                  className="flex-1 w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-1 focus:ring-orange-500 resize-none font-mono leading-relaxed"
                 />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              </div>
 
-              <div className="relative">
-                <select 
-                  value={selectedCategory}
-                  onChange={(e) => {
-                    setSelectedCategory(e.target.value);
-                    setSelectedProduct('All');
-                  }}
-                  className="appearance-none pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-white hover:border-orange-500 transition-colors focus:outline-none"
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                  <AlertCircle size={18} className="text-blue-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-blue-700 leading-relaxed">
+                    <strong>Tip:</strong> You can copy a whole column of phone numbers from Excel and paste it here directly. We will automatically extract the valid numbers for you.
+                  </p>
+                </div>
+                
+                <button 
+                  disabled={manualParsedNumbers.length === 0}
+                  onClick={toggleSelectManualAll}
+                  className="w-full py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-black transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                 >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat === 'All' ? 'Select Category' : cat}</option>
-                  ))}
-                </select>
-                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  {selectedPhones.size === manualParsedNumbers.length && manualParsedNumbers.length > 0 
+                    ? 'Deselect All Imported Numbers' 
+                    : `Select All ${manualParsedNumbers.length} Valid Numbers`}
+                </button>
               </div>
-
-              <div className="relative">
-                <select 
-                  value={selectedProduct}
-                  onChange={(e) => setSelectedProduct(e.target.value)}
-                  className="appearance-none pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-white hover:border-orange-500 transition-colors focus:outline-none max-w-[180px]"
-                >
-                  <option value="All">Select Product</option>
-                  {filteredProductsByCat.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <Package className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-              </div>
-
-              <button onClick={resetFilters} className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
-                <RotateCcw size={18} />
-              </button>
             </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                Found {filteredCustomers.length} Customers
-              </span>
-              <button onClick={toggleSelectAll} className="text-xs font-bold text-orange-600 hover:bg-orange-50 px-3 py-1 rounded-lg transition-colors">
-                {selectedPhones.size === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-white shadow-sm z-10">
-                <tr>
-                  <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Selected</th>
-                  <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Customer</th>
-                  <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Phone</th>
-                  <th className="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase">Orders</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filteredCustomers.map((c) => (
-                  <tr 
-                    key={c.phone} 
-                    className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${selectedPhones.has(c.phone) ? 'bg-orange-50/30' : ''}`}
-                    onClick={() => toggleSelectCustomer(c.phone)}
-                  >
-                    <td className="px-6 py-4">
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedPhones.has(c.phone) ? 'bg-orange-500 border-orange-500' : 'border-gray-200 bg-white'}`}>
-                        {selectedPhones.has(c.phone) && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <img src={c.avatar} alt={c.name} className="w-8 h-8 rounded-full border border-gray-100" />
-                        <span className="text-sm font-medium text-gray-700">{c.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{c.phone}</td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs font-bold text-gray-400">{c.orderCount} Orders</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredCustomers.length === 0 && (
-              <div className="py-20 text-center space-y-4">
-                <Users className="mx-auto text-gray-200" size={48} />
-                <p className="text-sm text-gray-400">No customers found matching these filters.</p>
-                <button onClick={resetFilters} className="text-xs text-orange-600 font-bold hover:underline">Reset Filters</button>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Right: Message Composer */}
@@ -324,37 +487,81 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
               </span>
             </div>
 
-            <textarea 
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your message here..."
-              className="w-full h-40 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-1 focus:ring-orange-500 resize-none"
-            />
+            <div className="relative">
+              <textarea 
+                ref={messageAreaRef}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message here..."
+                className="w-full h-40 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-1 focus:ring-orange-500 resize-none pb-12"
+              />
+              <div className="absolute bottom-3 left-3 flex gap-2">
+                <button 
+                  onClick={insertNameTag}
+                  className="px-2 py-1 bg-white border border-gray-200 rounded-md text-[10px] font-bold text-orange-600 hover:bg-orange-50 transition-colors flex items-center gap-1 shadow-sm"
+                >
+                  <User size={10} /> [name] Name Tag
+                </button>
+              </div>
+            </div>
+            
+            <p className="text-[10px] text-gray-400 leading-tight">
+              <strong>Personalization:</strong> Use <span className="text-orange-600 font-bold">[name]</span> to automatically insert the customer's first name.
+            </p>
 
-            <div className="space-y-3">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">AI Assistance (Draft with Gemini)</p>
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Message Templates & AI</p>
+                <button 
+                  onClick={() => setShowTemplateModal(true)}
+                  className="p-1 hover:bg-orange-50 text-orange-600 rounded transition-colors"
+                  title="Add New Template"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+
               <div className="flex flex-wrap gap-2">
+                {/* AI Quick Drafts */}
                 <button 
                   disabled={isGenerating}
-                  onClick={() => handleGenerateAI("Seasonal 50% Discount Sale Invitation")}
-                  className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs font-semibold border border-orange-100 hover:bg-orange-100 flex items-center gap-2 transition-all disabled:opacity-50"
+                  onClick={() => handleGenerateAI("Seasonal 50% Discount Sale Invitation with name greeting")}
+                  className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold border border-orange-100 hover:bg-orange-100 flex items-center gap-2 transition-all disabled:opacity-50"
                 >
                   <Wand2 size={12} /> Discount Sale
                 </button>
                 <button 
                   disabled={isGenerating}
-                  onClick={() => handleGenerateAI("New Product Collection Arrival Notification")}
-                  className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold border border-blue-100 hover:bg-blue-100 flex items-center gap-2 transition-all disabled:opacity-50"
+                  onClick={() => handleGenerateAI("New Product Collection Arrival Notification with name greeting")}
+                  className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold border border-blue-100 hover:bg-blue-100 flex items-center gap-2 transition-all disabled:opacity-50"
                 >
                   <Wand2 size={12} /> New Arrival
                 </button>
                 <button 
                   disabled={isGenerating}
-                  onClick={() => handleGenerateAI("Customer Loyalty Appreciation Message")}
-                  className="px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg text-xs font-semibold border border-purple-100 hover:bg-purple-100 flex items-center gap-2 transition-all disabled:opacity-50"
+                  onClick={() => handleGenerateAI("Customer Loyalty Appreciation Message with name greeting")}
+                  className="px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg text-[10px] font-bold border border-purple-100 hover:bg-purple-100 flex items-center gap-2 transition-all disabled:opacity-50"
                 >
                   <Wand2 size={12} /> Loyalty Greet
                 </button>
+
+                {/* Custom Saved Templates */}
+                {templates.map(tmpl => (
+                  <div key={tmpl.id} className="group relative">
+                    <button 
+                      onClick={() => setMessage(tmpl.content)}
+                      className="px-3 py-1.5 bg-white text-gray-600 rounded-lg text-[10px] font-bold border border-gray-100 hover:border-orange-500 hover:text-orange-600 flex items-center gap-2 transition-all"
+                    >
+                      <FileText size={12} /> {tmpl.name}
+                    </button>
+                    <button 
+                      onClick={(e) => deleteTemplate(tmpl.id, e)}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -371,7 +578,7 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
               ) : (
                 <>
                   <Send size={18} />
-                  Send SMS Now
+                  Send SMS to {selectedPhones.size} Recipients
                 </>
               )}
             </button>
@@ -379,7 +586,10 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
 
           {sendLogs.length > 0 && (
             <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-              <h3 className="text-sm font-bold text-gray-800 mb-4">Send Progress</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-800">Send Progress</h3>
+                <button onClick={() => setSendLogs([])} className="text-[10px] text-gray-400 hover:text-red-500 uppercase font-bold">Clear Logs</button>
+              </div>
               <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
                 {sendLogs.map((log, idx) => (
                   <div key={idx} className="flex items-center justify-between py-1 text-xs">
@@ -456,9 +666,53 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
                 >
                   Save Configuration
                 </button>
-                <p className="text-[10px] text-center text-gray-400 mt-4 leading-relaxed px-4">
-                  Check your SMS provider's documentation for the correct Endpoint URL and API Key.
-                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Template Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Add New Template</h2>
+                <p className="text-xs text-gray-500">Create a reusable SMS message</p>
+              </div>
+              <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase">Template Name</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Eid Offer, Winter Sale"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-orange-500"
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate({...newTemplate, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase">Message Content</label>
+                <textarea 
+                  placeholder="Type your template message here..."
+                  className="w-full h-32 p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-orange-500 resize-none"
+                  value={newTemplate.content}
+                  onChange={(e) => setNewTemplate({...newTemplate, content: e.target.value})}
+                />
+              </div>
+              <div className="pt-2">
+                <button 
+                  onClick={handleAddTemplate}
+                  disabled={!newTemplate.name || !newTemplate.content}
+                  className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-700 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  Save Template
+                </button>
               </div>
             </div>
           </div>
