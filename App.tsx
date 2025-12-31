@@ -324,7 +324,7 @@ const App: React.FC = () => {
       case 'bulk-sms':
         return <BulkSMSView customers={customers} orders={orders} products={products} />;
       case 'courier':
-        return <CourierDashboardView />;
+        return <CourierDashboardView orders={orders} onRefresh={loadAllData} />;
       case 'orders':
         return (
           <OrderDashboardView 
