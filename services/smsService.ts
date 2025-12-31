@@ -59,16 +59,13 @@ export const saveCustomTemplates = async (templates: SMSTemplate[]) => {
   await saveSetting('sms_templates', templates);
 };
 
-// Fix for generateSMSTemplate to ensure it always returns a string and uses API key correctly from environment
 export const generateSMSTemplate = async (purpose: string, businessName: string): Promise<string> => {
   try {
-    // Initialize inside the function to use process.env.API_KEY directly
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Create a professional SMS message for "${businessName}". Purpose: "${purpose}". Use [name] for customer name. Short & crisp.`,
     });
-    // response.text is a property, not a method
     return response.text?.trim() || "Hello [name], thank you for shopping with us!";
   } catch (error) {
     console.error("Gemini SMS template generation failed:", error);
@@ -82,21 +79,22 @@ export const sendActualSMS = async (config: SMSConfig, phone: string, message: s
     const isUnicode = !gsmRegex.test(message);
     const type = isUnicode ? 'unicode' : 'text';
 
+    // ফোন নম্বর ফরম্যাট করা (৮৮ প্রিফিক্স নিশ্চিত করা)
     let formattedPhone = phone.trim().replace(/[^\d]/g, '');
     if (formattedPhone.length === 11 && formattedPhone.startsWith('01')) {
       formattedPhone = '88' + formattedPhone;
     }
 
+    // আপনার দেওয়া ডকুমেন্টেশন অনুযায়ী বডি তৈরি
     const response = await fetch('api/send_sms.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        endpoint: config.endpoint,
         api_key: config.apiKey,
         senderid: config.senderId,
-        number: formattedPhone,
-        message: message,
-        type: type
+        type: type,
+        msg: message,        // 'message' এর বদলে 'msg'
+        contacts: formattedPhone // 'number' এর বদলে 'contacts'
       })
     });
     
