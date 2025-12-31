@@ -13,7 +13,6 @@ export interface SMSTemplate {
   content: string;
 }
 
-// Internal helper to fetch and double-parse settings (envelope + content)
 const fetchSetting = async (key: string): Promise<any> => {
   try {
     const res = await fetch(`api/settings.php?key=${key}`);
@@ -21,16 +20,12 @@ const fetchSetting = async (key: string): Promise<any> => {
     const text = await res.text();
     if (!text) return null;
     try {
-      // First parse: extracts the value (which is likely a JSON string itself)
       const data = JSON.parse(text);
-      // Second parse: converts the stored JSON string back into its original object form
       return data ? JSON.parse(data as string) : null;
     } catch (e) {
-      console.error(`Error parsing setting ${key}:`, e);
       return null;
     }
   } catch (e) {
-    console.error(`Error fetching setting ${key}:`, e);
     return null;
   }
 };
@@ -64,51 +59,55 @@ export const saveCustomTemplates = async (templates: SMSTemplate[]) => {
   await saveSetting('sms_templates', templates);
 };
 
-export const generateSMSTemplate = async (purpose: string, businessName: string) => {
+/**
+ * Generates an SMS template using Gemini.
+ * Explicit return type Promise<string> helps resolve inference issues in components.
+ */
+export const generateSMSTemplate = async (purpose: string, businessName: string): Promise<string> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Create a professional and short SMS message for a business named "${businessName}". The purpose is: "${purpose}". 
-      Use the tag "[name]" where the customer's name should be placed (e.g., "Hello [name], ..."). 
-      Keep it under 160 characters. Return only the message text.`,
+      contents: `Create a professional SMS message for "${businessName}". Purpose: "${purpose}". Use [name] for customer name. Short & crisp.`,
     });
+    // response.text is a getter that returns the generated text or undefined
     return response.text?.trim() || "Hello [name], thank you for shopping with us!";
   } catch (error) {
-    console.error("Gemini SMS Generation Error:", error);
-    return "Hello [name], special offer just for you! Visit our store today.";
+    console.error("Gemini SMS template generation failed:", error);
+    return "Hello [name], check out our new collection!";
   }
 };
 
 export const sendActualSMS = async (config: SMSConfig, phone: string, message: string) => {
   try {
-    // Detect if unicode (Bengali) is present
     const gsmRegex = /^[\u0000-\u007F]*$/;
     const isUnicode = !gsmRegex.test(message);
-    const type = isUnicode ? 'unicode' : 'plain';
+    const type = isUnicode ? 'unicode' : 'text';
 
-    // Instead of direct external fetch which causes CORS issues, 
-    // we call our local PHP proxy.
+    // Format phone to include 88 prefix if missing
+    let formattedPhone = phone.trim().replace(/[^\d]/g, '');
+    if (formattedPhone.length === 11 && formattedPhone.startsWith('01')) {
+      formattedPhone = '88' + formattedPhone;
+    }
+
     const response = await fetch('api/send_sms.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         endpoint: config.endpoint,
         api_key: config.apiKey,
-        sender_id: config.senderId,
-        recipient: phone,
+        senderid: config.senderId, // mram uses 'senderid'
+        number: formattedPhone,    // mram uses 'number'
         message: message,
         type: type
       })
     });
     
     if (!response.ok) return false;
-    
     const result = await response.json();
     return result.success === true;
   } catch (error) {
-    console.error("SMS proxy sending error:", error);
+    console.error("SMS sending failed:", error);
     return false;
   }
 };
