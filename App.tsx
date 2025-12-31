@@ -24,14 +24,13 @@ import {
   Zap,
   Receipt,
   Loader2,
-  RefreshCcw
+  RefreshCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
 import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig } from './services/wordpressService';
 import { syncOrderStatusWithCourier } from './services/courierService';
 import { DashboardStats, Order, InventoryProduct, Customer } from './types';
-
-const INITIAL_ORDERS: Order[] = [];
 
 const DashboardContent: React.FC<{ 
   stats: DashboardStats; 
@@ -40,8 +39,19 @@ const DashboardContent: React.FC<{
   statusCounts: Record<string, number>;
   loadingData: boolean;
   onRefresh: () => void;
-}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData, onRefresh }) => (
+  hasConfig: boolean;
+}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData, onRefresh, hasConfig }) => (
   <div className="space-y-8 animate-in fade-in duration-500">
+    {!hasConfig && (
+      <div className="bg-red-50 border border-red-100 p-6 rounded-2xl flex items-center gap-4 text-red-600 shadow-sm animate-pulse">
+        <AlertTriangle size={24} className="shrink-0" />
+        <div>
+          <p className="text-sm font-bold uppercase tracking-tight">WordPress Connection Required</p>
+          <p className="text-xs opacity-80">Click the "Settings" (gear icon) in the Top Bar to enter your WordPress URL, Consumer Key, and Secret.</p>
+        </div>
+      </div>
+    )}
+
     <div className="flex justify-between items-center">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
         <StatCard title="Net Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
@@ -163,6 +173,7 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [hasConfig, setHasConfig] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     netProfit: 0,
     grossProfit: 0,
@@ -192,8 +203,11 @@ const App: React.FC = () => {
 
   const loadAllData = async () => {
     const config = await getWPConfig();
-    if (!config) return;
-
+    if (!config || !config.url || !config.consumerKey) {
+      setHasConfig(false);
+      return;
+    }
+    setHasConfig(true);
     setLoadingData(true);
     try {
       const [wpOrders, wpProducts] = await Promise.all([
@@ -209,9 +223,7 @@ const App: React.FC = () => {
         })
       }));
 
-      // Now sync these orders with Steadfast Courier API
       const syncedOrders = await syncOrderStatusWithCourier(enrichedOrders);
-
       setOrders(syncedOrders);
       setProducts(wpProducts);
       
@@ -304,6 +316,7 @@ const App: React.FC = () => {
             statusCounts={statusCounts} 
             loadingData={loadingData}
             onRefresh={loadAllData}
+            hasConfig={hasConfig}
           />
         );
       case 'analytics':
@@ -333,6 +346,7 @@ const App: React.FC = () => {
             statusCounts={statusCounts} 
             loadingData={loadingData}
             onRefresh={loadAllData}
+            hasConfig={hasConfig}
           />
         );
     }
