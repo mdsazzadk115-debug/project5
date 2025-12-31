@@ -59,18 +59,16 @@ export const saveCustomTemplates = async (templates: SMSTemplate[]) => {
   await saveSetting('sms_templates', templates);
 };
 
-/**
- * Generates an SMS template using Gemini.
- * Explicit return type Promise<string> helps resolve inference issues in components.
- */
+// Fix for generateSMSTemplate to ensure it always returns a string and uses API key correctly from environment
 export const generateSMSTemplate = async (purpose: string, businessName: string): Promise<string> => {
   try {
+    // Initialize inside the function to use process.env.API_KEY directly
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Create a professional SMS message for "${businessName}". Purpose: "${purpose}". Use [name] for customer name. Short & crisp.`,
     });
-    // response.text is a getter that returns the generated text or undefined
+    // response.text is a property, not a method
     return response.text?.trim() || "Hello [name], thank you for shopping with us!";
   } catch (error) {
     console.error("Gemini SMS template generation failed:", error);
@@ -78,13 +76,12 @@ export const generateSMSTemplate = async (purpose: string, businessName: string)
   }
 };
 
-export const sendActualSMS = async (config: SMSConfig, phone: string, message: string) => {
+export const sendActualSMS = async (config: SMSConfig, phone: string, message: string): Promise<{success: boolean, message: string}> => {
   try {
     const gsmRegex = /^[\u0000-\u007F]*$/;
     const isUnicode = !gsmRegex.test(message);
     const type = isUnicode ? 'unicode' : 'text';
 
-    // Format phone to include 88 prefix if missing
     let formattedPhone = phone.trim().replace(/[^\d]/g, '');
     if (formattedPhone.length === 11 && formattedPhone.startsWith('01')) {
       formattedPhone = '88' + formattedPhone;
@@ -96,18 +93,20 @@ export const sendActualSMS = async (config: SMSConfig, phone: string, message: s
       body: JSON.stringify({
         endpoint: config.endpoint,
         api_key: config.apiKey,
-        senderid: config.senderId, // mram uses 'senderid'
-        number: formattedPhone,    // mram uses 'number'
+        senderid: config.senderId,
+        number: formattedPhone,
         message: message,
         type: type
       })
     });
     
-    if (!response.ok) return false;
-    const result = await response.json();
-    return result.success === true;
-  } catch (error) {
+    if (!response.ok) {
+      return { success: false, message: `Server Error: ${response.statusText}` };
+    }
+    
+    return await response.json();
+  } catch (error: any) {
     console.error("SMS sending failed:", error);
-    return false;
+    return { success: false, message: error.message || 'Unknown network error' };
   }
 };
