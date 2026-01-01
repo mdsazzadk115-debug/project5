@@ -10,9 +10,13 @@ import {
   PackageSearch,
   Search,
   Calendar,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Zap,
+  Loader2,
+  Info
 } from 'lucide-react';
-import { getCourierBalance, getCourierConfig } from '../services/courierService';
+import { getCourierBalance, getCourierConfig, saveTrackingLocally, getDeliveryStatus } from '../services/courierService';
 import { Order } from '../types';
 
 const StatusBadge: React.FC<{ label: string; count: number; colorClass: string }> = ({ label, count, colorClass }) => (
@@ -32,8 +36,13 @@ interface CourierDashboardViewProps {
 export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orders, onRefresh }) => {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // External tracking states
+  const [manualTrackingCode, setManualTrackingCode] = useState('');
+  const [isAddingTracking, setIsAddingTracking] = useState(false);
 
   // Calculate real stats from the synced orders list
   const stats = useMemo(() => {
@@ -80,6 +89,35 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
     loadData();
   }, []);
 
+  const handleAddManualTracking = async () => {
+    if (!manualTrackingCode.trim()) return;
+    setIsAddingTracking(true);
+    try {
+      const statusData = await getDeliveryStatus(manualTrackingCode.trim());
+      if (statusData && statusData.status === 200) {
+        // We use tracking code as the ID for external orders to avoid collision
+        await saveTrackingLocally(manualTrackingCode.trim(), manualTrackingCode.trim(), statusData.delivery_status);
+        alert("Manual Tracking Added Successfully! Refreshing list...");
+        setManualTrackingCode('');
+        loadData();
+      } else {
+        alert("Tracking code not found in Steadfast system.");
+      }
+    } catch (e) {
+      alert("Failed to sync tracking. Please check API connection.");
+    } finally {
+      setIsAddingTracking(false);
+    }
+  };
+
+  const handleDeepSync = async () => {
+    setIsSyncing(true);
+    // Deep sync logic is called inside loadData via syncOrderStatusWithCourier
+    await loadData();
+    setIsSyncing(false);
+    alert("Deep Sync Completed: Checked for manual Steadfast entries matching WordPress Invoices.");
+  };
+
   // Filter and sort the consignments (orders with tracking codes)
   const recentConsignments = useMemo(() => {
     let filtered = orders.filter(o => o.courier_tracking_code);
@@ -107,19 +145,29 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Steadfast Courier Integration</h2>
           <p className="text-sm text-gray-500">Real-time synchronization with your packzy.com account.</p>
         </div>
-        <button 
-          onClick={loadData}
-          disabled={loading}
-          className="px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-orange-600 transition-all flex items-center gap-2 text-sm font-bold shadow-sm active:scale-95 disabled:opacity-50"
-        >
-          <RefreshCcw size={18} className={loading ? 'animate-spin' : ''} /> 
-          {loading ? 'Refreshing...' : 'Refresh Courier Data'}
-        </button>
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <button 
+            onClick={handleDeepSync}
+            disabled={isSyncing || loading}
+            className="flex-1 lg:flex-none px-5 py-2.5 bg-orange-50 text-orange-600 border border-orange-100 rounded-xl hover:bg-orange-100 transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-sm"
+          >
+            {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />} 
+            Deep Sync
+          </button>
+          <button 
+            onClick={loadData}
+            disabled={loading}
+            className="flex-1 lg:flex-none px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-orange-600 transition-all flex items-center justify-center gap-2 text-sm font-bold shadow-sm"
+          >
+            <RefreshCcw size={18} className={loading ? 'animate-spin' : ''} /> 
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {!isConfigured && (
@@ -131,6 +179,42 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
           </div>
         </div>
       )}
+
+      {/* Manual Sync Bar (New Feature) */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center gap-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+            <Plus size={20} />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-gray-800">External Tracking</h4>
+            <p className="text-[10px] text-gray-400 font-bold uppercase">FB / WhatsApp Orders</p>
+          </div>
+        </div>
+        
+        <div className="flex-1 flex items-center gap-2 w-full">
+          <input 
+            type="text" 
+            placeholder="Enter Steadfast Tracking Code (e.g. 5231...)" 
+            value={manualTrackingCode}
+            onChange={(e) => setManualTrackingCode(e.target.value)}
+            className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:border-blue-500 transition-all"
+          />
+          <button 
+            onClick={handleAddManualTracking}
+            disabled={isAddingTracking || !manualTrackingCode}
+            className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-2 whitespace-nowrap"
+          >
+            {isAddingTracking ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+            Sync Entry
+          </button>
+        </div>
+        
+        <div className="hidden lg:flex items-center gap-2 text-gray-400 bg-gray-50 px-3 py-2 rounded-lg text-[10px] font-medium border border-gray-100">
+          <Info size={14} />
+          Paste tracking code to add orders manually.
+        </div>
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -180,8 +264,8 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
               <PackageSearch size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-gray-800">Recent Consignments</h3>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Orders sent to courier</p>
+              <h3 className="font-bold text-gray-800">Consignments List</h3>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">WordPress & External Orders</p>
             </div>
           </div>
           
@@ -219,7 +303,10 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
                   <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-gray-800">#{order.id}</span>
+                        <span className={`text-sm font-bold ${order.id.startsWith('EXT-') ? 'text-blue-600' : 'text-gray-800'}`}>
+                          #{order.id.replace('EXT-', '')}
+                          {order.id.startsWith('EXT-') && <span className="ml-2 text-[8px] bg-blue-100 px-1 rounded uppercase">EXT</span>}
+                        </span>
                         <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium">
                           <Calendar size={10} /> {new Date(order.timestamp).toLocaleDateString()}
                         </div>
@@ -271,13 +358,13 @@ export const CourierDashboardView: React.FC<CourierDashboardViewProps> = ({ orde
               </div>
               <h4 className="text-gray-800 font-bold mb-2">No Consignments Found</h4>
               <p className="text-sm text-gray-400 leading-relaxed mb-6">
-                Orders that are sent to Steadfast Courier will appear here automatically.
+                Orders from WordPress or manual entries will appear here automatically.
               </p>
               <button 
-                onClick={() => window.location.reload()}
+                onClick={() => loadData()}
                 className="px-6 py-2 bg-gray-800 text-white rounded-xl text-xs font-bold hover:bg-gray-900 transition-all flex items-center gap-2 mx-auto"
               >
-                Check for Sync
+                Sync Now
               </button>
             </div>
           </div>
