@@ -128,19 +128,33 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
   for (let order of activeOrders) {
     const statusData = await getDeliveryStatus(order.courier_tracking_code!);
     if (statusData && statusData.status === 200 && statusData.delivery_status) {
-      const courierStatus = statusData.delivery_status;
+      const courierStatus: string = statusData.delivery_status;
       
       let newStatus: Order['status'] = order.status;
       const cs = courierStatus.toLowerCase();
-      if (cs.includes('delivered')) newStatus = 'Delivered';
-      else if (cs.includes('cancelled')) newStatus = 'Cancelled';
-      else if (cs.includes('return')) newStatus = 'Returned';
-      else if (cs.includes('transit') || cs.includes('shipping') || cs.includes('pickup')) newStatus = 'Shipping';
+
+      // Precise Mapping based on Steadfast Documentation
+      if (cs.includes('delivered')) {
+        newStatus = 'Delivered';
+      } else if (cs.includes('cancelled')) {
+        newStatus = 'Cancelled';
+      } else if (cs.includes('return')) {
+        newStatus = 'Returned';
+      } else if (cs === 'pending' || cs === 'hold' || cs === 'in_review') {
+        newStatus = 'Packaging';
+      } else if (cs !== 'unknown') {
+        // Any other non-terminal status is considered 'Shipping'
+        newStatus = 'Shipping';
+      }
 
       if (newStatus !== order.status) {
         const idx = updatedOrders.findIndex(o => o.id === order.id);
         if (idx !== -1) {
-          updatedOrders[idx] = { ...updatedOrders[idx], status: newStatus, courier_status: courierStatus };
+          updatedOrders[idx] = { 
+            ...updatedOrders[idx], 
+            status: newStatus, 
+            courier_status: courierStatus 
+          };
           await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus);
         }
       }

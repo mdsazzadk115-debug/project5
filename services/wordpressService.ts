@@ -95,11 +95,21 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
       
       if (tracking && tracking.courier_status) {
         const cs = tracking.courier_status.toLowerCase();
-        if (cs.includes('delivered')) mappedStatus = 'Delivered';
-        else if (cs.includes('cancelled')) mappedStatus = 'Cancelled';
-        else if (cs.includes('return')) mappedStatus = 'Returned';
-        else if (cs.includes('transit') || cs.includes('shipping') || cs.includes('pickup')) mappedStatus = 'Shipping';
-        else mappedStatus = 'Packaging';
+        
+        // Exact mapping from documentation statuses
+        if (cs.includes('delivered')) {
+          mappedStatus = 'Delivered';
+        } else if (cs.includes('cancelled')) {
+          mappedStatus = 'Cancelled';
+        } else if (cs.includes('return')) {
+          mappedStatus = 'Returned';
+        } else if (cs === 'pending' || cs === 'hold' || cs === 'in_review') {
+          mappedStatus = 'Packaging';
+        } else if (cs !== 'unknown') {
+          mappedStatus = 'Shipping';
+        } else {
+          mappedStatus = 'Pending';
+        }
       } else {
         switch (wc.status) {
           case 'processing': mappedStatus = 'Packaging'; break;
