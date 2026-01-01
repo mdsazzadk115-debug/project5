@@ -107,6 +107,56 @@ export const createSteadfastOrder = async (order: Order) => {
   }
 };
 
+/**
+ * Creates a courier order manually for External sources (FB/WhatsApp)
+ */
+export const createManualCourierOrder = async (data: {
+  name: string;
+  phone: string;
+  address: string;
+  amount: number;
+  note?: string;
+}) => {
+  const config = await getCourierConfig();
+  if (!config || !config.apiKey) throw new Error("Courier API not configured");
+
+  const extInvoiceId = `EXT-${Date.now()}`;
+  
+  try {
+    const response = await fetch(`${PROXY_URL}?action=create`, {
+      method: 'POST',
+      headers: {
+        'Api-Key': config.apiKey,
+        'Secret-Key': config.secretKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        invoice: extInvoiceId,
+        recipient_name: data.name,
+        recipient_phone: data.phone,
+        recipient_address: data.address,
+        cod_amount: data.amount,
+        note: data.note || 'Manual Order from Dashboard'
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.status === 200 && result.consignment) {
+      await saveTrackingLocally(
+        extInvoiceId, 
+        result.consignment.tracking_code, 
+        result.consignment.status
+      );
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Manual Steadfast Order Error:", error);
+    throw error;
+  }
+};
+
 export const getDeliveryStatus = async (trackingCode: string) => {
   const config = await getCourierConfig();
   if (!config || !config.apiKey) return null;
@@ -225,19 +275,9 @@ export const deepSyncManualOrders = async (orders: Order[]) => {
   if (!config || !config.apiKey) return orders;
 
   const ordersToSync = orders.filter(o => !o.courier_tracking_code);
-  let syncedCount = 0;
-
-  for (const order of ordersToSync) {
-    // Note: The courier.php doesn't have an explicit 'get_by_invoice' action in the switch.
-    // However, Steadfast allows tracking by invoice via their generic status endpoint if configured.
-    // We assume the proxy can handle it or we use the status endpoint if it supports it.
-    // For this implementation, we try to fetch status by tracking but use Invoice as a key.
-    
-    // According to documentation, we use tracking_code.
-    // If the proxy is updated to handle invoice queries, we'd call it here.
-    // For now, we simulate the link if it was found.
-  }
-
+  
+  // Future implementation: Check each WP invoice ID against Steadfast status endpoint
+  
   return orders;
 };
 
