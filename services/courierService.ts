@@ -1,11 +1,13 @@
-
 import { CourierConfig, Order } from "../types";
 
-const BASE_URL = "https://portal.packzy.com/api/v1";
+// Base URL points to our local proxy scripts
+const PROXY_URL = "api/courier.php";
+const TRACKING_URL = "api/local_tracking.php";
+const SETTINGS_URL = "api/settings.php";
 
 const fetchSetting = async (key: string) => {
   try {
-    const res = await fetch(`api/settings.php?key=${key}`);
+    const res = await fetch(`${SETTINGS_URL}?key=${key}`);
     if (!res.ok) return null;
     const text = await res.text();
     try {
@@ -21,7 +23,7 @@ const fetchSetting = async (key: string) => {
 
 const saveSetting = async (key: string, value: any) => {
   try {
-    await fetch(`api/settings.php`, {
+    await fetch(SETTINGS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value: JSON.stringify(value) })
@@ -39,10 +41,9 @@ export const saveCourierConfig = async (config: CourierConfig) => {
   await saveSetting('courier_config', config);
 };
 
-// Internal function to save tracking info locally
 export const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string) => {
   try {
-    await fetch('api/update_order_courier.php', {
+    await fetch(TRACKING_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -52,7 +53,7 @@ export const saveTrackingLocally = async (orderId: string, trackingCode: string,
       })
     });
   } catch (e) {
-    console.error("Local DB update failed:", e);
+    console.error("Local tracking update failed:", e);
   }
 };
 
@@ -61,7 +62,7 @@ export const createSteadfastOrder = async (order: Order) => {
   if (!config || !config.apiKey) throw new Error("Courier API not configured");
 
   try {
-    const response = await fetch(`${BASE_URL}/create_order`, {
+    const response = await fetch(`${PROXY_URL}?action=create`, {
       method: 'POST',
       headers: {
         'Api-Key': config.apiKey,
@@ -74,7 +75,7 @@ export const createSteadfastOrder = async (order: Order) => {
         recipient_phone: order.customer.phone,
         recipient_address: order.address,
         cod_amount: order.total,
-        note: `Order from Dashboard`
+        note: `Order from Admin Dashboard`
       })
     });
 
@@ -100,7 +101,7 @@ export const getDeliveryStatus = async (trackingCode: string) => {
   if (!config || !config.apiKey) return null;
 
   try {
-    const response = await fetch(`${BASE_URL}/status_by_trackingcode/${trackingCode}`, {
+    const response = await fetch(`${PROXY_URL}?action=status&tracking_code=${trackingCode}`, {
       method: 'GET',
       headers: {
         'Api-Key': config.apiKey,
@@ -114,7 +115,6 @@ export const getDeliveryStatus = async (trackingCode: string) => {
   }
 };
 
-// This function loops through orders and updates their status if they have tracking
 export const syncOrderStatusWithCourier = async (orders: Order[]) => {
   const activeOrders = orders.filter(o => 
     o.courier_tracking_code && 
@@ -130,18 +130,17 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
     if (statusData && statusData.status === 200 && statusData.delivery_status) {
       const courierStatus = statusData.delivery_status;
       
-      // Map Steadfast status to Dashboard status
       let newStatus: Order['status'] = order.status;
-      if (courierStatus.includes('delivered')) newStatus = 'Delivered';
-      else if (courierStatus.includes('cancelled')) newStatus = 'Cancelled';
-      else if (courierStatus.includes('return')) newStatus = 'Returned';
-      else if (courierStatus.includes('transit') || courierStatus.includes('shipping')) newStatus = 'Shipping';
+      const cs = courierStatus.toLowerCase();
+      if (cs.includes('delivered')) newStatus = 'Delivered';
+      else if (cs.includes('cancelled')) newStatus = 'Cancelled';
+      else if (cs.includes('return')) newStatus = 'Returned';
+      else if (cs.includes('transit') || cs.includes('shipping') || cs.includes('pickup')) newStatus = 'Shipping';
 
       if (newStatus !== order.status) {
         const idx = updatedOrders.findIndex(o => o.id === order.id);
         if (idx !== -1) {
           updatedOrders[idx] = { ...updatedOrders[idx], status: newStatus, courier_status: courierStatus };
-          // Update local MySQL database
           await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus);
         }
       }
@@ -156,7 +155,7 @@ export const getCourierBalance = async () => {
   if (!config || !config.apiKey) return 0;
 
   try {
-    const response = await fetch(`${BASE_URL}/get_balance`, {
+    const response = await fetch(`${PROXY_URL}?action=balance`, {
       method: 'GET',
       headers: {
         'Api-Key': config.apiKey,

@@ -1,4 +1,3 @@
-
 import { Order, Product, InventoryProduct } from "../types";
 
 export interface WPConfig {
@@ -14,28 +13,29 @@ export interface WPCategory {
   count: number;
 }
 
+const SETTINGS_URL = "api/settings.php";
+const TRACKING_URL = "api/local_tracking.php";
+
 const fetchSetting = async (key: string) => {
   try {
-    const res = await fetch(`api/settings.php?key=${key}`);
+    const res = await fetch(`${SETTINGS_URL}?key=${key}`);
     if (!res.ok) return null;
     const text = await res.text();
     if (!text || text === "null") return null;
     try {
       const data = JSON.parse(text);
-      // settings.php returns the value which might be a JSON string itself
       return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
       return null;
     }
   } catch (e) {
-    console.error("Error fetching setting:", key, e);
     return null;
   }
 };
 
 const saveSetting = async (key: string, value: any) => {
   try {
-    await fetch(`api/settings.php`, {
+    await fetch(SETTINGS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value: JSON.stringify(value) })
@@ -60,7 +60,7 @@ export const saveWPConfig = async (config: WPConfig) => {
 
 const fetchLocalTrackingData = async (): Promise<any[]> => {
   try {
-    const res = await fetch(`api/get_local_orders.php`);
+    const res = await fetch(TRACKING_URL);
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];
@@ -74,7 +74,6 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
   try {
     const config = await getWPConfig();
     if (!config || !config.url || !config.consumerKey) {
-      console.warn("WordPress config is incomplete.");
       return [];
     }
 
@@ -85,10 +84,7 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
     const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
 
     const response = await fetch(apiBase);
-    if (!response.ok) {
-      console.error(`WooCommerce API Error: ${response.status} ${response.statusText}`);
-      return [];
-    }
+    if (!response.ok) return [];
     const allWcOrders = await response.json();
 
     if (!Array.isArray(allWcOrders)) return [];
@@ -102,7 +98,7 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         if (cs.includes('delivered')) mappedStatus = 'Delivered';
         else if (cs.includes('cancelled')) mappedStatus = 'Cancelled';
         else if (cs.includes('return')) mappedStatus = 'Returned';
-        else if (cs.includes('transit') || cs.includes('shipping')) mappedStatus = 'Shipping';
+        else if (cs.includes('transit') || cs.includes('shipping') || cs.includes('pickup')) mappedStatus = 'Shipping';
         else mappedStatus = 'Packaging';
       } else {
         switch (wc.status) {
@@ -148,7 +144,6 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
       };
     });
   } catch (error) {
-    console.error("WordPress Orders API Fetch Failed. This is likely a CORS issue or incorrect URL.", error);
     return [];
   }
 };
@@ -179,7 +174,6 @@ export const fetchProductsFromWP = async (): Promise<InventoryProduct[]> => {
       img: wc.images[0]?.src || 'https://picsum.photos/seed/' + wc.id + '/100/100'
     }));
   } catch (error) {
-    console.error("WordPress Products API Fetch Failed.", error);
     return [];
   }
 };
@@ -196,7 +190,6 @@ export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    console.error("WordPress Categories API Error:", e);
     return [];
   }
 };
