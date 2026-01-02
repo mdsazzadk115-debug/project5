@@ -54,7 +54,6 @@ export const savePathaoConfig = async (config: PathaoConfig) => {
 async function pathaoRequest(endpoint: string, method: string = 'GET', body: any = null) {
   const config = await getPathaoConfig();
   if (!config || !config.clientId) {
-    console.error("Pathao Config is missing.");
     throw new Error("Pathao not configured");
   }
 
@@ -70,8 +69,7 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
       })
     });
 
-    const result = await response.json();
-    return result;
+    return await response.json();
   } catch (error) {
     console.error(`Pathao API Request Failed (${endpoint}):`, error);
     return { error: true, message: error };
@@ -79,82 +77,64 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
 }
 
 /**
- * Robustly extract data array from Pathao response.
- * Handles cases where data might be nested in multiple 'data' keys 
- * or returned as a JSON string within the object.
+ * According to Pathao Documentation:
+ * Response format: { "data": { "data": [ ... ] }, "code": 200, ... }
  */
 const extractPathaoData = (res: any): any[] => {
   if (!res) return [];
 
-  // If the proxy returns an error, log it and return empty
-  if (res.error || (res.data && res.data.error)) {
-    console.warn("Pathao API returned an error:", res);
+  // Check if there is an error reported by the proxy or Pathao
+  if (res.error || (res.code && res.code !== 200 && res.code !== "200")) {
+    console.warn("Pathao API returned error:", res.message || res);
     return [];
   }
 
-  let current = res;
+  // Pathao's data is usually inside data.data
+  let result = res.data;
 
-  // Sometimes the entire response is inside a 'data' key from the proxy
-  if (current.data !== undefined) {
-    current = current.data;
-  }
-
-  // Handle double stringification (if PHP proxy returns a JSON string instead of object)
-  if (typeof current === 'string') {
+  // Handle double JSON stringification if it happens in the proxy
+  if (typeof result === 'string') {
     try {
-      current = JSON.parse(current);
+      result = JSON.parse(result);
     } catch (e) {
       return [];
     }
   }
 
-  // Drill down through 'data' keys until we find an array or run out of options
-  // Pathao typically uses { data: { data: [ ... ] } }
-  let safetyCounter = 0;
-  while (current && !Array.isArray(current) && current.data && safetyCounter < 3) {
-    current = current.data;
-    if (typeof current === 'string') {
-      try {
-        current = JSON.parse(current);
-      } catch (e) {
-        break;
-      }
-    }
-    safetyCounter++;
+  // If the structure is { data: [ ... ] }
+  if (result && result.data && Array.isArray(result.data)) {
+    return result.data;
   }
 
-  if (Array.isArray(current)) {
-    return current;
+  // If the structure is already an array
+  if (Array.isArray(result)) {
+    return result;
   }
 
-  // Last ditch effort: if it's an object with an array property, return that array
-  if (current && typeof current === 'object') {
-    const arrays = Object.values(current).filter(val => Array.isArray(val));
-    if (arrays.length > 0) return arrays[0] as any[];
+  // Fallback: If it's still at the top level
+  if (res.data && Array.isArray(res.data)) {
+    return res.data;
   }
 
   return [];
 };
 
 export const getPathaoCities = async () => {
-  const res = await pathaoRequest('aladdin/api/v1/cities', 'GET');
-  const data = extractPathaoData(res);
-  console.log("Pathao Cities Found:", data.length);
-  return data;
+  // CORRECT ENDPOINT: /aladdin/api/v1/city-list
+  const res = await pathaoRequest('aladdin/api/v1/city-list', 'GET');
+  return extractPathaoData(res);
 };
 
 export const getPathaoZones = async (cityId: number) => {
+  // CORRECT ENDPOINT: /aladdin/api/v1/cities/{city_id}/zone-list
   const res = await pathaoRequest(`aladdin/api/v1/cities/${cityId}/zone-list`, 'GET');
-  const data = extractPathaoData(res);
-  console.log(`Pathao Zones for City ${cityId}:`, data.length);
-  return data;
+  return extractPathaoData(res);
 };
 
 export const getPathaoAreas = async (zoneId: number) => {
+  // CORRECT ENDPOINT: /aladdin/api/v1/zones/{zone_id}/area-list
   const res = await pathaoRequest(`aladdin/api/v1/zones/${zoneId}/area-list`, 'GET');
-  const data = extractPathaoData(res);
-  console.log(`Pathao Areas for Zone ${zoneId}:`, data.length);
-  return data;
+  return extractPathaoData(res);
 };
 
 export const createPathaoOrder = async (order: Order, location: { city: number, zone: number, area: number }) => {
@@ -170,11 +150,11 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     recipient_city: location.city,
     recipient_zone: location.zone,
     recipient_area: location.area,
-    delivery_type: 48, // Standard
-    item_type: 2, // Parcel
+    delivery_type: 48, // Standard (48 in docs)
+    item_type: 2, // Parcel (2 in docs)
     special_instruction: "Fragile",
     item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0),
-    item_weight: 0.5,
+    item_weight: "0.5",
     amount_to_collect: order.total,
     item_description: order.products.map(p => p.name).join(', ')
   };
