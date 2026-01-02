@@ -2,7 +2,7 @@
 import { PathaoConfig, Order } from "../types";
 
 const SETTINGS_URL = "api/settings.php";
-const PROXY_URL = "api/pathao_proxy.php"; // Assuming a proxy script for Pathao exists or is needed for CORS
+const PROXY_URL = "api/pathao_proxy.php";
 
 const fetchSetting = async (key: string) => {
   try {
@@ -13,6 +13,7 @@ const fetchSetting = async (key: string) => {
     try {
       const data = JSON.parse(text);
       // Safe parsing: if the result of the first parse is still a string, parse it again.
+      // This handles cases where data might be double-stringified in the database.
       return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
       console.error(`Error parsing setting for key ${key}:`, e);
@@ -52,38 +53,72 @@ export const savePathaoConfig = async (config: PathaoConfig) => {
   await saveSetting('pathao_config', config);
 };
 
-// Generic fetcher that goes through our PHP proxy to handle OAuth and Pathao API
+// Generic fetcher that goes through our PHP proxy
 async function pathaoRequest(endpoint: string, method: string = 'GET', body: any = null) {
   const config = await getPathaoConfig();
-  if (!config || !config.clientId) throw new Error("Pathao not configured");
+  if (!config || !config.clientId) {
+    console.error("Pathao Config is missing or incomplete.");
+    throw new Error("Pathao not configured");
+  }
 
-  const response = await fetch(PROXY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      config,
-      endpoint,
-      method,
-      data: body
-    })
-  });
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        config,
+        endpoint,
+        method,
+        data: body
+      })
+    });
 
-  return await response.json();
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error(`Pathao API Request Failed (${endpoint}):`, error);
+    return { error: true, message: error };
+  }
 }
+
+/**
+ * Pathao API returns data in different nesting levels depending on the proxy setup.
+ * Usually it's either res.data.data or res.data.data.data.
+ */
+const extractPathaoData = (res: any) => {
+  if (!res || res.error) return [];
+  
+  // If proxy wraps it: res.data.data.data
+  if (res.data?.data?.data && Array.isArray(res.data.data.data)) {
+    return res.data.data.data;
+  }
+  
+  // If proxy returns directly: res.data.data
+  if (res.data?.data && Array.isArray(res.data.data)) {
+    return res.data.data;
+  }
+
+  // Fallback for some endpoints
+  if (res.data && Array.isArray(res.data)) {
+    return res.data;
+  }
+
+  return [];
+};
 
 export const getPathaoCities = async () => {
   const res = await pathaoRequest('aladdin/api/v1/cities', 'GET');
-  return res.data?.data || [];
+  return extractPathaoData(res);
 };
 
 export const getPathaoZones = async (cityId: number) => {
   const res = await pathaoRequest(`aladdin/api/v1/cities/${cityId}/zone-list`, 'GET');
-  return res.data?.data || [];
+  return extractPathaoData(res);
 };
 
 export const getPathaoAreas = async (zoneId: number) => {
   const res = await pathaoRequest(`aladdin/api/v1/zones/${zoneId}/area-list`, 'GET');
-  return res.data?.data || [];
+  return extractPathaoData(res);
 };
 
 export const createPathaoOrder = async (order: Order, location: { city: number, zone: number, area: number }) => {
