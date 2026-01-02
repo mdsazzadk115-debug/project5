@@ -1,3 +1,4 @@
+
 import { Order, Product, InventoryProduct } from "../types";
 
 export interface WPConfig {
@@ -96,7 +97,6 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
       if (tracking && tracking.courier_status) {
         const cs = tracking.courier_status.toLowerCase();
         
-        // Exact mapping from documentation statuses
         if (cs.includes('delivered')) {
           mappedStatus = 'Delivered';
         } else if (cs.includes('cancelled')) {
@@ -150,7 +150,8 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         status: mappedStatus,
         statusHistory: { placed: new Date(wc.date_created).toLocaleDateString() },
         courier_tracking_code: tracking?.courier_tracking_code || undefined,
-        courier_status: tracking?.courier_status || undefined
+        courier_status: tracking?.courier_status || undefined,
+        courier_name: (tracking?.courier_name as 'Steadfast' | 'Pathao') || undefined
       };
     });
   } catch (error) {

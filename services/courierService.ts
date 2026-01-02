@@ -1,7 +1,7 @@
+
 import { CourierConfig, Order } from "../types";
 import { getPathaoOrderStatus } from "./pathaoService";
 
-// Base URL points to our local proxy scripts
 const PROXY_URL = "api/courier.php";
 const TRACKING_URL = "api/local_tracking.php";
 const SETTINGS_URL = "api/settings.php";
@@ -65,7 +65,7 @@ export const saveTrackingLocally = async (orderId: string, trackingCode: string,
         order_id: orderId,
         tracking_code: trackingCode,
         status: status,
-        courier_name: courier // Storing the courier name is crucial for the list view
+        courier_name: courier 
       })
     });
   } catch (e) {
@@ -136,17 +136,27 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
   const localTracking = await fetchAllLocalTracking();
   const updatedOrders = [...orders];
 
-  // 1. Update existing WP orders that have tracking
+  for (let i = 0; i < updatedOrders.length; i++) {
+    const order = updatedOrders[i];
+    const trackingInfo = localTracking.find(t => t.id === order.id);
+    
+    if (trackingInfo && !order.courier_name) {
+      updatedOrders[i] = {
+        ...updatedOrders[i],
+        courier_name: trackingInfo.courier_name,
+        courier_tracking_code: trackingInfo.courier_tracking_code,
+        courier_status: trackingInfo.courier_status
+      };
+    }
+  }
+
   const activeOrders = updatedOrders.filter(o => 
     o.courier_tracking_code && 
     !['Delivered', 'Cancelled', 'Returned'].includes(o.status)
   );
 
   for (let order of activeOrders) {
-    // Find which courier this tracking belongs to
-    const trackingInfo = localTracking.find(t => t.id === order.id || t.courier_tracking_code === order.courier_tracking_code);
-    const courier = trackingInfo?.courier_name || 'Steadfast';
-    
+    const courier = order.courier_name || 'Steadfast';
     let courierStatus = '';
     let rawStatusData: any = null;
 
@@ -172,22 +182,19 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
       else if (cs === 'pending' || cs === 'hold' || cs === 'packaging') newStatus = 'Packaging';
       else if (cs !== 'unknown') newStatus = 'Shipping';
 
-      if (newStatus !== order.status) {
-        const idx = updatedOrders.findIndex(o => o.id === order.id);
-        if (idx !== -1) {
-          updatedOrders[idx] = { 
-            ...updatedOrders[idx], 
-            status: newStatus, 
-            courier_status: courierStatus,
-            courier_name: courier
-          };
-          await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus, courier);
-        }
+      const idx = updatedOrders.findIndex(o => o.id === order.id);
+      if (idx !== -1 && (newStatus !== updatedOrders[idx].status || courierStatus !== updatedOrders[idx].courier_status)) {
+        updatedOrders[idx] = { 
+          ...updatedOrders[idx], 
+          status: newStatus, 
+          courier_status: courierStatus,
+          courier_name: courier
+        };
+        await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus, courier);
       }
     }
   }
 
-  // 2. Identify external orders
   const wpOrderIds = new Set(orders.map(o => o.id));
   const externalTracking = localTracking.filter(t => !wpOrderIds.has(t.id));
 
