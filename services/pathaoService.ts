@@ -75,6 +75,18 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
   }
 }
 
+export const getPathaoOrderStatus = async (trackingCode: string) => {
+  return await pathaoRequest(`aladdin/api/v1/orders/${trackingCode}`, 'GET');
+};
+
+export const getPathaoBalance = async () => {
+  // Pathao doesn't have a direct "balance" API like Steadfast in their merchant API usually,
+  // but we can check store connectivity or fetch a summary.
+  // For now we'll return a static "API Active" or placeholder.
+  const res = await pathaoRequest('aladdin/api/v1/stores', 'GET');
+  return res.code === 200 ? 1 : 0; // Return 1 if store is accessible
+};
+
 /**
  * According to Pathao Documentation:
  * List endpoints return: { data: { data: [ ... ] }, code: 200, ... }
@@ -88,12 +100,12 @@ const extractPathaoData = (res: any): any[] => {
     return [];
   }
 
-  // Handle { data: { data: [] } } structure for list endpoints
+  // Pathao returns data in nested layers: res.data.data
   if (res.data && res.data.data && Array.isArray(res.data.data)) {
     return res.data.data;
   }
 
-  // Handle { data: [] } structure just in case
+  // For some endpoints it might just be res.data
   if (res.data && Array.isArray(res.data)) {
     return res.data;
   }
@@ -102,19 +114,16 @@ const extractPathaoData = (res: any): any[] => {
 };
 
 export const getPathaoCities = async () => {
-  // Documentation Endpoint: /aladdin/api/v1/city-list
   const res = await pathaoRequest('aladdin/api/v1/city-list', 'GET');
   return extractPathaoData(res);
 };
 
 export const getPathaoZones = async (cityId: number) => {
-  // Documentation Endpoint: /aladdin/api/v1/cities/{city_id}/zone-list
   const res = await pathaoRequest(`aladdin/api/v1/cities/${cityId}/zone-list`, 'GET');
   return extractPathaoData(res);
 };
 
 export const getPathaoAreas = async (zoneId: number) => {
-  // Documentation Endpoint: /aladdin/api/v1/zones/{zone_id}/area-list
   const res = await pathaoRequest(`aladdin/api/v1/zones/${zoneId}/area-list`, 'GET');
   return extractPathaoData(res);
 };
@@ -141,7 +150,6 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     item_description: order.products.map(p => p.name).join(', ')
   };
 
-  // The proxy now returns Pathao's response directly
   const res = await pathaoRequest('aladdin/api/v1/orders', 'POST', payload);
   return res;
 };
