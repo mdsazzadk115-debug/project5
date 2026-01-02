@@ -52,6 +52,7 @@ export interface Order {
   statusHistory: OrderStatusHistory;
   courier_tracking_code?: string;
   courier_status?: string;
+  courier_provider?: 'steadfast' | 'pathao';
 }
 
 export interface DashboardStats {
@@ -68,4 +69,12 @@ export interface DashboardStats {
 export interface CourierConfig {
   apiKey: string;
   secretKey: string;
+}
+
+export interface PathaoConfig {
+  clientId: string;
+  clientSecret: string;
+  username: string;
+  password: string;
+  baseUrl: string; // 'https://api-hermes.pathao.com' for production
 }
