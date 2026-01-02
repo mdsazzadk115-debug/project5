@@ -18,14 +18,17 @@ const fetchSetting = async (key: string): Promise<any> => {
     const res = await fetch(`api/settings.php?key=${key}`);
     if (!res.ok) return null;
     const text = await res.text();
-    if (!text) return null;
+    if (!text || text === "null") return null;
     try {
       const data = JSON.parse(text);
-      return data ? JSON.parse(data as string) : null;
+      // Safe parsing: if the result of the first parse is still a string, parse it again.
+      return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
+      console.error(`Error parsing setting for key ${key}:`, e);
       return null;
     }
   } catch (e) {
+    console.error(`Error fetching setting for key ${key}:`, e);
     return null;
   }
 };

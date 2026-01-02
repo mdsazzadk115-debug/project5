@@ -11,13 +11,18 @@ const fetchSetting = async (key: string) => {
     const res = await fetch(`${SETTINGS_URL}?key=${key}`);
     if (!res.ok) return null;
     const text = await res.text();
+    if (!text || text === "null") return null;
     try {
       const data = JSON.parse(text);
-      return data ? JSON.parse(data) : null;
+      // Safe parsing: if the result of the first parse is still a string, parse it again.
+      // This handles cases where data might be double-stringified in the database.
+      return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
+      console.error(`Error parsing setting for key ${key}:`, e);
       return null;
     }
   } catch (e) {
+    console.error(`Error fetching setting for key ${key}:`, e);
     return null;
   }
 };
