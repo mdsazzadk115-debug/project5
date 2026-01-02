@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Printer, 
   Info, 
@@ -13,10 +13,14 @@ import {
   Send,
   Loader2,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  X,
+  Map
 } from 'lucide-react';
 import { Order } from '../types';
-import { createSteadfastOrder } from '../services/courierService';
+import { createSteadfastOrder, saveTrackingLocally } from '../services/courierService';
+import { getPathaoCities, getPathaoZones, getPathaoAreas, createPathaoOrder } from '../services/pathaoService';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -25,7 +29,64 @@ interface OrderDetailViewProps {
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack }) => {
   const [isShipping, setIsShipping] = useState(false);
-  const [shippingResult, setShippingResult] = useState<{tracking: string, id: number} | null>(order.courier_tracking_code ? {tracking: order.courier_tracking_code, id: 0} : null);
+  const [shippingResult, setShippingResult] = useState<{tracking: string, courier: string} | null>(
+    order.courier_tracking_code ? {tracking: order.courier_tracking_code, courier: order.courier_name || 'Steadfast'} : null
+  );
+
+  // Pathao Modal State
+  const [showPathaoModal, setShowPathaoModal] = useState(false);
+  const [cities, setCities] = useState<any[]>([]);
+  const [zones, setZones] = useState<any[]>([]);
+  const [areas, setAreas] = useState<any[]>([]);
+  const [selectedLoc, setSelectedLoc] = useState({ city: 0, zone: 0, area: 0 });
+  const [loadingLoc, setLoadingLoc] = useState(false);
+
+  useEffect(() => {
+    if (showPathaoModal) {
+      loadCities();
+    }
+  }, [showPathaoModal]);
+
+  const loadCities = async () => {
+    setLoadingLoc(true);
+    try {
+      const data = await getPathaoCities();
+      setCities(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingLoc(false);
+    }
+  };
+
+  const handleCityChange = async (cityId: number) => {
+    setSelectedLoc({ city: cityId, zone: 0, area: 0 });
+    setZones([]);
+    setAreas([]);
+    setLoadingLoc(true);
+    try {
+      const data = await getPathaoZones(cityId);
+      setZones(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingLoc(false);
+    }
+  };
+
+  const handleZoneChange = async (zoneId: number) => {
+    setSelectedLoc(prev => ({ ...prev, zone: zoneId, area: 0 }));
+    setAreas([]);
+    setLoadingLoc(true);
+    try {
+      const data = await getPathaoAreas(zoneId);
+      setAreas(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingLoc(false);
+    }
+  };
 
   const isStepCompleted = (step: 'placed' | 'packaging' | 'shipping' | 'delivered') => {
     const statusMap: Record<Order['status'], string[]> = {
@@ -48,7 +109,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
       if (res.status === 200) {
         setShippingResult({
           tracking: res.consignment.tracking_code,
-          id: res.consignment.consignment_id
+          courier: 'Steadfast'
         });
         alert("Sent to Steadfast Courier Successfully!");
       } else {
@@ -56,6 +117,30 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
       }
     } catch (error: any) {
       alert("Courier Config Error: Please check your API keys in Settings.");
+    } finally {
+      setIsShipping(false);
+    }
+  };
+
+  const handlePathaoSubmit = async () => {
+    if (!selectedLoc.city || !selectedLoc.zone || !selectedLoc.area) {
+      alert("Please select City, Zone and Area.");
+      return;
+    }
+    setIsShipping(true);
+    try {
+      const res = await createPathaoOrder(order, selectedLoc);
+      if (res.data?.data?.consignment_id) {
+        const tracking = res.data.data.consignment_id;
+        setShippingResult({ tracking, courier: 'Pathao' });
+        await saveTrackingLocally(order.id, tracking, 'Pending');
+        alert(`Sent to Pathao Successfully! Tracking: ${tracking}`);
+        setShowPathaoModal(false);
+      } else {
+        alert("Error: " + (res.message || "Failed to create Pathao order"));
+      }
+    } catch (e: any) {
+      alert("Pathao Error: " + e.message);
     } finally {
       setIsShipping(false);
     }
@@ -74,23 +159,37 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
               </h2>
               {shippingResult && (
                 <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-100">
-                  <Truck size={12} /> Tracking: {shippingResult.tracking}
+                  <Truck size={12} /> {shippingResult.courier}: {shippingResult.tracking}
                 </div>
               )}
             </div>
             <div className="flex gap-2">
-              <button 
-                onClick={handleSendToSteadfast}
-                disabled={!!shippingResult || isShipping}
-                className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
-                  shippingResult 
-                  ? 'bg-green-100 text-green-600 cursor-default' 
-                  : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50'
-                }`}
-              >
-                {isShipping ? <Loader2 size={16} className="animate-spin" /> : shippingResult ? <CheckCircle size={16} /> : <Send size={16} />}
-                {shippingResult ? 'Sent to Courier' : 'Send to Steadfast'}
-              </button>
+              <div className="relative group">
+                <button 
+                  disabled={!!shippingResult || isShipping}
+                  className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
+                    shippingResult 
+                    ? 'bg-green-100 text-green-600 cursor-default' 
+                    : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50'
+                  }`}
+                >
+                  {isShipping ? <Loader2 size={16} className="animate-spin" /> : shippingResult ? <CheckCircle size={16} /> : <Send size={16} />}
+                  {shippingResult ? `Sent to ${shippingResult.courier}` : 'Send to Courier'}
+                  {!shippingResult && <ChevronDown size={14} />}
+                </button>
+                
+                {!shippingResult && !isShipping && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-2 hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button onClick={handleSendToSteadfast} className="w-full px-4 py-2.5 text-left text-xs font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-2">
+                      <Truck size={14} /> Steadfast Courier
+                    </button>
+                    <button onClick={() => setShowPathaoModal(true)} className="w-full px-4 py-2.5 text-left text-xs font-bold text-gray-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-2">
+                      <Truck size={14} /> Pathao Courier
+                    </button>
+                  </div>
+                )}
+              </div>
+              
               <button className="bg-white border border-gray-200 text-gray-600 px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50 transition-colors">
                 <Printer size={16} /> Print Invoice
               </button>
@@ -169,6 +268,83 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
         </div>
       </div>
 
+      {/* Pathao Modal */}
+      {showPathaoModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <div className="flex items-center gap-2">
+                <Map className="text-orange-600" size={20} />
+                <div>
+                  <h3 className="font-bold text-gray-800">Pathao Delivery Setup</h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">Select Area for ID: {order.id}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPathaoModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">City</label>
+                <select 
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                  value={selectedLoc.city}
+                  onChange={(e) => handleCityChange(parseInt(e.target.value))}
+                >
+                  <option value="0">Select City</option>
+                  {cities.map(c => <option key={c.city_id} value={c.city_id}>{c.city_name}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Zone</label>
+                <select 
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500 disabled:opacity-50"
+                  disabled={!selectedLoc.city}
+                  value={selectedLoc.zone}
+                  onChange={(e) => handleZoneChange(parseInt(e.target.value))}
+                >
+                  <option value="0">Select Zone</option>
+                  {zones.map(z => <option key={z.zone_id} value={z.zone_id}>{z.zone_name}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Area</label>
+                <select 
+                  className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500 disabled:opacity-50"
+                  disabled={!selectedLoc.zone}
+                  value={selectedLoc.area}
+                  onChange={(e) => setSelectedLoc(prev => ({...prev, area: parseInt(e.target.value)}))}
+                >
+                  <option value="0">Select Area</option>
+                  {areas.map(a => <option key={a.area_id} value={a.area_id}>{a.area_name}</option>)}
+                </select>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button onClick={() => setShowPathaoModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+                <button 
+                  onClick={handlePathaoSubmit}
+                  disabled={isShipping || !selectedLoc.area}
+                  className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isShipping ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  Send to Pathao
+                </button>
+              </div>
+            </div>
+            {loadingLoc && (
+              <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+                <Loader2 size={24} className="animate-spin text-orange-600" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Order Items */}
         <div className="col-span-12 lg:col-span-9 bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
@@ -176,12 +352,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
             <h3 className="text-sm font-bold text-gray-700">Order Item</h3>
             {shippingResult && (
               <a 
-                href={`https://steadfast.com.bd/tracking/${shippingResult.tracking}`} 
+                href={shippingResult.courier === 'Pathao' ? '#' : `https://steadfast.com.bd/tracking/${shippingResult.tracking}`} 
                 target="_blank" 
                 rel="noreferrer"
                 className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
               >
-                Track in Steadfast <ExternalLink size={12} />
+                Track in {shippingResult.courier} <ExternalLink size={12} />
               </a>
             )}
           </div>

@@ -3,13 +3,17 @@ import React, { useState, useEffect } from 'react';
 import { Search, Bell, Globe, RefreshCcw, Calendar, ChevronDown, LayoutGrid, Settings, X, Truck } from 'lucide-react';
 import { getWPConfig, saveWPConfig, WPConfig } from '../services/wordpressService';
 import { getCourierConfig, saveCourierConfig } from '../services/courierService';
-import { CourierConfig } from '../types';
+import { getPathaoConfig, savePathaoConfig } from '../services/pathaoService';
+import { CourierConfig, PathaoConfig } from '../types';
 
 export const TopBar: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState<'wp' | 'courier'>('wp');
+  const [activeTab, setActiveTab] = useState<'wp' | 'courier' | 'pathao'>('wp');
   const [config, setConfig] = useState<WPConfig>({ url: '', consumerKey: '', consumerSecret: '' });
   const [courierConfig, setCourierConfig] = useState<CourierConfig>({ apiKey: '', secretKey: '' });
+  const [pathaoConfig, setPathaoConfig] = useState<PathaoConfig>({
+    clientId: '', clientSecret: '', username: '', password: '', storeId: '', isSandbox: true
+  });
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -17,15 +21,19 @@ export const TopBar: React.FC = () => {
       if (saved) setConfig(saved);
       const savedCourier = await getCourierConfig();
       if (savedCourier) setCourierConfig(savedCourier);
+      const savedPathao = await getPathaoConfig();
+      if (savedPathao) setPathaoConfig(savedPathao);
     };
     loadConfig();
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (activeTab === 'wp') {
-      saveWPConfig(config);
-    } else {
-      saveCourierConfig(courierConfig);
+      await saveWPConfig(config);
+    } else if (activeTab === 'courier') {
+      await saveCourierConfig(courierConfig);
+    } else if (activeTab === 'pathao') {
+      await savePathaoConfig(pathaoConfig);
     }
     setShowSettings(false);
     window.location.reload();
@@ -85,8 +93,8 @@ export const TopBar: React.FC = () => {
 
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-gray-800">Connection Settings</h2>
                 <p className="text-xs text-gray-500">Manage your third-party integrations</p>
@@ -96,26 +104,32 @@ export const TopBar: React.FC = () => {
               </button>
             </div>
             
-            <div className="flex border-b border-gray-100">
+            <div className="flex border-b border-gray-100 shrink-0">
               <button 
                 onClick={() => setActiveTab('wp')}
-                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${activeTab === 'wp' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+                className={`flex-1 py-3 text-[10px] font-bold uppercase transition-colors ${activeTab === 'wp' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
               >
                 WordPress
               </button>
               <button 
                 onClick={() => setActiveTab('courier')}
-                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${activeTab === 'courier' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+                className={`flex-1 py-3 text-[10px] font-bold uppercase transition-colors ${activeTab === 'courier' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
               >
-                Steadfast Courier
+                Steadfast
+              </button>
+              <button 
+                onClick={() => setActiveTab('pathao')}
+                className={`flex-1 py-3 text-[10px] font-bold uppercase transition-colors ${activeTab === 'pathao' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+              >
+                Pathao
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {activeTab === 'wp' ? (
+            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+              {activeTab === 'wp' && (
                 <>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase">Site URL</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Site URL</label>
                     <input 
                       type="text" 
                       placeholder="https://yourstore.com"
@@ -125,7 +139,7 @@ export const TopBar: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase">Consumer Key</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Consumer Key</label>
                     <input 
                       type="password" 
                       placeholder="ck_xxxxxxxx..."
@@ -135,7 +149,7 @@ export const TopBar: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase">Consumer Secret</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Consumer Secret</label>
                     <input 
                       type="password" 
                       placeholder="cs_xxxxxxxx..."
@@ -145,10 +159,12 @@ export const TopBar: React.FC = () => {
                     />
                   </div>
                 </>
-              ) : (
+              )}
+
+              {activeTab === 'courier' && (
                 <>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase">API Key</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">API Key</label>
                     <input 
                       type="password" 
                       placeholder="Your Steadfast API Key"
@@ -158,7 +174,7 @@ export const TopBar: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase">Secret Key</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Secret Key</label>
                     <input 
                       type="password" 
                       placeholder="Your Steadfast Secret Key"
@@ -176,7 +192,71 @@ export const TopBar: React.FC = () => {
                 </>
               )}
 
-              <div className="pt-4">
+              {activeTab === 'pathao' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Client ID</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-xs outline-none focus:border-orange-500"
+                        value={pathaoConfig.clientId}
+                        onChange={(e) => setPathaoConfig({...pathaoConfig, clientId: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Client Secret</label>
+                      <input 
+                        type="password" 
+                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-xs outline-none focus:border-orange-500"
+                        value={pathaoConfig.clientSecret}
+                        onChange={(e) => setPathaoConfig({...pathaoConfig, clientSecret: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Username</label>
+                      <input 
+                        type="text" 
+                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-xs outline-none focus:border-orange-500"
+                        value={pathaoConfig.username}
+                        onChange={(e) => setPathaoConfig({...pathaoConfig, username: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Password</label>
+                      <input 
+                        type="password" 
+                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-xs outline-none focus:border-orange-500"
+                        value={pathaoConfig.password}
+                        onChange={(e) => setPathaoConfig({...pathaoConfig, password: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Store ID</label>
+                    <input 
+                      type="text" 
+                      placeholder="Your Pathao Store ID"
+                      className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                      value={pathaoConfig.storeId}
+                      onChange={(e) => setPathaoConfig({...pathaoConfig, storeId: e.target.value})}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="sandbox"
+                      checked={pathaoConfig.isSandbox}
+                      onChange={(e) => setPathaoConfig({...pathaoConfig, isSandbox: e.target.checked})}
+                    />
+                    <label htmlFor="sandbox" className="text-xs font-medium text-gray-600">Use Sandbox (Testing)</label>
+                  </div>
+                </>
+              )}
+
+              <div className="pt-4 shrink-0">
                 <button 
                   onClick={handleSave}
                   className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-700 transition-all active:scale-[0.98]"

@@ -52,6 +52,7 @@ export interface Order {
   statusHistory: OrderStatusHistory;
   courier_tracking_code?: string;
   courier_status?: string;
+  courier_name?: 'Steadfast' | 'Pathao';
 }
 
 export interface DashboardStats {
@@ -68,4 +69,13 @@ export interface DashboardStats {
 export interface CourierConfig {
   apiKey: string;
   secretKey: string;
+}
+
+export interface PathaoConfig {
+  clientId: string;
+  clientSecret: string;
+  username: string;
+  password: string;
+  storeId: string;
+  isSandbox: boolean;
 }
