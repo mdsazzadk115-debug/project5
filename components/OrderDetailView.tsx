@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState } from 'react';
 import { 
   Printer, 
   Info, 
@@ -12,20 +13,10 @@ import {
   Send,
   Loader2,
   CheckCircle,
-  ExternalLink,
-  X,
-  Store,
-  Map
+  ExternalLink
 } from 'lucide-react';
 import { Order } from '../types';
-import { 
-  createSteadfastOrder, 
-  createPathaoOrder, 
-  fetchPathaoCities, 
-  fetchPathaoZones, 
-  fetchPathaoAreas, 
-  fetchPathaoStores 
-} from '../services/courierService';
+import { createSteadfastOrder } from '../services/courierService';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -34,23 +25,7 @@ interface OrderDetailViewProps {
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack }) => {
   const [isShipping, setIsShipping] = useState(false);
-  const [shippingResult, setShippingResult] = useState<{tracking: string, id: string | number, provider: string} | null>(
-    order.courier_tracking_code ? {tracking: order.courier_tracking_code, id: 0, provider: order.courier_provider || 'steadfast'} : null
-  );
-
-  // Pathao Modal States
-  const [showPathaoModal, setShowPathaoModal] = useState(false);
-  const [cities, setCities] = useState<any[]>([]);
-  const [zones, setZones] = useState<any[]>([]);
-  const [areas, setAreas] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [loadingLocs, setLoadingLocs] = useState(false);
-  const [pathaoForm, setPathaoForm] = useState({
-    city_id: '',
-    zone_id: '',
-    area_id: '',
-    store_id: ''
-  });
+  const [shippingResult, setShippingResult] = useState<{tracking: string, id: number} | null>(order.courier_tracking_code ? {tracking: order.courier_tracking_code, id: 0} : null);
 
   const isStepCompleted = (step: 'placed' | 'packaging' | 'shipping' | 'delivered') => {
     const statusMap: Record<Order['status'], string[]> = {
@@ -70,113 +45,17 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
     setIsShipping(true);
     try {
       const res = await createSteadfastOrder(order);
-      if (res && res.status === 200) {
+      if (res.status === 200) {
         setShippingResult({
           tracking: res.consignment.tracking_code,
-          id: res.consignment.consignment_id,
-          provider: 'steadfast'
+          id: res.consignment.consignment_id
         });
         alert("Sent to Steadfast Courier Successfully!");
       } else {
-        alert("Error: " + (res?.message || "Failed to create consignment. Check API Connection."));
+        alert("Error: " + (res.message || "Failed to create consignment"));
       }
     } catch (error: any) {
-      console.error(error);
-      alert("Courier Config Error: Please check your API keys in Connections settings.");
-    } finally {
-      setIsShipping(false);
-    }
-  };
-
-  const openPathaoDispatch = async () => {
-    if (shippingResult) return;
-    setShowPathaoModal(true);
-    setLoadingLocs(true);
-    try {
-      const [cityList, storeList] = await Promise.all([fetchPathaoCities(), fetchPathaoStores()]);
-      setCities(cityList);
-      setStores(storeList);
-      if (storeList && storeList.length > 0) {
-        setPathaoForm(prev => ({ ...prev, store_id: storeList[0].store_id.toString() }));
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Failed to load Pathao locations. Check Pathao credentials.");
-    } finally {
-      setLoadingLocs(false);
-    }
-  };
-
-  const handlePathaoCityChange = async (cityId: string) => {
-    setPathaoForm({ ...pathaoForm, city_id: cityId, zone_id: '', area_id: '' });
-    setZones([]);
-    setAreas([]);
-    if (!cityId) return;
-    setLoadingLocs(true);
-    try {
-      const zoneList = await fetchPathaoZones(parseInt(cityId));
-      setZones(zoneList);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingLocs(false);
-    }
-  };
-
-  const handlePathaoZoneChange = async (zoneId: string) => {
-    setPathaoForm({ ...pathaoForm, zone_id: zoneId, area_id: '' });
-    setAreas([]);
-    if (!zoneId) return;
-    setLoadingLocs(true);
-    try {
-      const areaList = await fetchPathaoAreas(parseInt(zoneId));
-      setAreas(areaList);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingLocs(false);
-    }
-  };
-
-  const submitToPathao = async () => {
-    if (!pathaoForm.city_id || !pathaoForm.zone_id || !pathaoForm.store_id) {
-      alert("Please select Store, City and Zone.");
-      return;
-    }
-    setIsShipping(true);
-    try {
-      const pathaoData = {
-        store_id: parseInt(pathaoForm.store_id),
-        merchant_order_id: order.id,
-        recipient_name: order.customer.name,
-        recipient_phone: order.customer.phone,
-        recipient_address: order.address,
-        recipient_city: parseInt(pathaoForm.city_id),
-        recipient_zone: parseInt(pathaoForm.zone_id),
-        recipient_area: pathaoForm.area_id ? parseInt(pathaoForm.area_id) : undefined,
-        delivery_type: 48, // Standard
-        item_type: 2, // Parcel
-        item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0),
-        item_weight: 0.5,
-        amount_to_collect: order.total,
-        special_instruction: "Order from Dashboard"
-      };
-
-      const res = await createPathaoOrder(pathaoData);
-      if (res && res.code === 200) {
-        setShippingResult({
-          tracking: res.data.consignment_id,
-          id: res.data.consignment_id,
-          provider: 'pathao'
-        });
-        setShowPathaoModal(false);
-        alert("Sent to Pathao Successfully!");
-      } else {
-        alert("Pathao Error: " + (res?.message || "Failed to create order"));
-      }
-    } catch (e: any) {
-      console.error(e);
-      alert("Pathao Error: " + e.message);
+      alert("Courier Config Error: Please check your API keys in Settings.");
     } finally {
       setIsShipping(false);
     }
@@ -185,9 +64,9 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 pb-12">
       {/* Header Info */}
-      <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm flex flex-col md:flex-row justify-between items-start gap-4">
+      <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm flex justify-between items-start">
         <div className="space-y-4 w-full">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-medium">
                 <span className="text-orange-600 font-bold">Order ID: {order.id}</span>
@@ -195,39 +74,25 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
               </h2>
               {shippingResult && (
                 <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-100">
-                  <Truck size={12} /> {shippingResult.provider.toUpperCase()}: {shippingResult.tracking}
+                  <Truck size={12} /> Tracking: {shippingResult.tracking}
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2">
               <button 
                 onClick={handleSendToSteadfast}
                 disabled={!!shippingResult || isShipping}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
-                  shippingResult?.provider === 'steadfast'
+                className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
+                  shippingResult 
                   ? 'bg-green-100 text-green-600 cursor-default' 
                   : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50'
                 }`}
               >
-                {isShipping && !showPathaoModal ? <Loader2 size={16} className="animate-spin" /> : shippingResult?.provider === 'steadfast' ? <CheckCircle size={16} /> : <Send size={16} />}
-                {shippingResult?.provider === 'steadfast' ? 'Sent to SF' : 'Send to Steadfast'}
+                {isShipping ? <Loader2 size={16} className="animate-spin" /> : shippingResult ? <CheckCircle size={16} /> : <Send size={16} />}
+                {shippingResult ? 'Sent to Courier' : 'Send to Steadfast'}
               </button>
-
-              <button 
-                onClick={openPathaoDispatch}
-                disabled={!!shippingResult || isShipping}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-md transition-all ${
-                  shippingResult?.provider === 'pathao'
-                  ? 'bg-blue-100 text-blue-600 cursor-default' 
-                  : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
-                }`}
-              >
-                {isShipping && showPathaoModal ? <Loader2 size={16} className="animate-spin" /> : shippingResult?.provider === 'pathao' ? <CheckCircle size={16} /> : <Truck size={16} />}
-                {shippingResult?.provider === 'pathao' ? 'Sent to Pathao' : 'Send to Pathao'}
-              </button>
-
-              <button className="bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50 transition-colors">
-                <Printer size={16} /> Invoice
+              <button className="bg-white border border-gray-200 text-gray-600 px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50 transition-colors">
+                <Printer size={16} /> Print Invoice
               </button>
             </div>
           </div>
@@ -257,6 +122,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
             ></div>
             
             <div className="relative flex justify-between">
+              {/* Step 1: Placed */}
               <div className="flex flex-col items-center gap-2">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('placed') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
                   <Package size={20} />
@@ -266,6 +132,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
                   <p className="text-[10px] text-gray-400">{order.statusHistory.placed}</p>
                 </div>
               </div>
+
+              {/* Step 2: Packaging */}
               <div className="flex flex-col items-center gap-2">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('packaging') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
                   <Package size={20} />
@@ -275,6 +143,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
                   {order.statusHistory.packaging && <p className="text-[10px] text-gray-400">{order.statusHistory.packaging}</p>}
                 </div>
               </div>
+
+              {/* Step 3: Shipping */}
               <div className="flex flex-col items-center gap-2">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center z-10 shadow-sm ${isStepCompleted('shipping') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-gray-100 text-gray-300'}`}>
                   <Truck size={20} />
@@ -284,6 +154,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
                   {order.statusHistory.shipping && <p className="text-[10px] text-gray-400">{order.statusHistory.shipping}</p>}
                 </div>
               </div>
+
+              {/* Step 4: Delivered */}
               <div className="flex flex-col items-center gap-2">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center z-10 shadow-sm ${isStepCompleted('delivered') ? 'bg-orange-600 text-white' : 'bg-white border-2 border-dashed border-gray-200 text-gray-300'}`}>
                   <Heart size={20} />
@@ -297,92 +169,6 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
         </div>
       </div>
 
-      {/* Pathao Modal */}
-      {showPathaoModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <div>
-                <h3 className="text-lg font-bold text-gray-800">Dispatch to Pathao</h3>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Select Location Details</p>
-              </div>
-              <button onClick={() => setShowPathaoModal(false)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-all">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2"><Store size={14} /> Pickup Store</label>
-                  <select 
-                    value={pathaoForm.store_id} 
-                    onChange={e => setPathaoForm({...pathaoForm, store_id: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
-                  >
-                    <option value="">Select Store</option>
-                    {stores.map(s => <option key={s.store_id} value={s.store_id}>{s.store_name}</option>)}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2"><MapPin size={14} /> City</label>
-                    <select 
-                      value={pathaoForm.city_id} 
-                      onChange={e => handlePathaoCityChange(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
-                    >
-                      <option value="">Select City</option>
-                      {cities.map(c => <option key={c.city_id} value={c.city_id}>{c.city_name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2"><Map size={14} /> Zone</label>
-                    <select 
-                      value={pathaoForm.zone_id} 
-                      disabled={!pathaoForm.city_id || loadingLocs}
-                      onChange={e => handlePathaoZoneChange(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none disabled:opacity-50"
-                    >
-                      <option value="">Select Zone</option>
-                      {zones.map(z => <option key={z.zone_id} value={z.zone_id}>{z.zone_name}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-400 uppercase">Area (Optional)</label>
-                  <select 
-                    value={pathaoForm.area_id} 
-                    disabled={!pathaoForm.zone_id || loadingLocs}
-                    onChange={e => setPathaoForm({...pathaoForm, area_id: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none disabled:opacity-50"
-                  >
-                    <option value="">Select Area</option>
-                    {areas.map(a => <option key={a.area_id} value={a.area_id}>{a.area_name}</option>)}
-                  </select>
-                </div>
-
-                {loadingLocs && <div className="flex items-center gap-2 text-blue-500 text-[10px] font-bold animate-pulse"><Loader2 size={12} className="animate-spin" /> Syncing Pathao locations...</div>}
-              </div>
-
-              <div className="flex gap-4 pt-4">
-                <button onClick={() => setShowPathaoModal(false)} className="flex-1 py-4 bg-gray-100 text-gray-600 font-bold rounded-2xl hover:bg-gray-200 transition-all">Cancel</button>
-                <button 
-                  onClick={submitToPathao} 
-                  disabled={isShipping || loadingLocs}
-                  className="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isShipping ? <Loader2 size={20} className="animate-spin" /> : <Truck size={20} />}
-                  Confirm Pathao Shipment
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Order Items */}
         <div className="col-span-12 lg:col-span-9 bg-white rounded-lg border border-gray-100 shadow-sm overflow-hidden">
@@ -390,12 +176,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
             <h3 className="text-sm font-bold text-gray-700">Order Item</h3>
             {shippingResult && (
               <a 
-                href={shippingResult.provider === 'steadfast' ? `https://steadfast.com.bd/tracking/${shippingResult.tracking}` : `https://pathao.com/courier/tracking/${shippingResult.tracking}`} 
+                href={`https://steadfast.com.bd/tracking/${shippingResult.tracking}`} 
                 target="_blank" 
                 rel="noreferrer"
                 className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
               >
-                Track in {shippingResult.provider.toUpperCase()} <ExternalLink size={12} />
+                Track in Steadfast <ExternalLink size={12} />
               </a>
             )}
           </div>
@@ -500,6 +286,16 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
                 <span className="font-bold text-gray-800">৳{order.total.toLocaleString()}</span>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-lg border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Search size={16} className="text-gray-400" />
+              <h4 className="text-sm font-medium text-gray-700">Check Customer Fraud History</h4>
+            </div>
+            <button className="w-full py-2 border border-red-400 text-red-500 rounded-full text-xs font-bold hover:bg-red-50 transition-colors">
+              Check Now
+            </button>
           </div>
         </div>
       </div>
