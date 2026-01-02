@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Printer, 
@@ -130,14 +129,15 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
     setIsShipping(true);
     try {
       const res = await createPathaoOrder(order, selectedLoc);
-      if (res.data?.data?.consignment_id) {
-        const tracking = res.data.data.consignment_id;
+      // Pathao's order creation success returns res.data.consignment_id
+      if (res.data?.consignment_id) {
+        const tracking = res.data.consignment_id;
         setShippingResult({ tracking, courier: 'Pathao' });
         await saveTrackingLocally(order.id, tracking, 'Pending');
         alert(`Sent to Pathao Successfully! Tracking: ${tracking}`);
         setShowPathaoModal(false);
       } else {
-        alert("Error: " + (res.message || "Failed to create Pathao order"));
+        alert("Error: " + (res.message || "Failed to create Pathao order. Check store ID or credentials."));
       }
     } catch (e: any) {
       alert("Pathao Error: " + e.message);

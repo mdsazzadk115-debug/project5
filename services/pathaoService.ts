@@ -1,4 +1,3 @@
-
 import { PathaoConfig, Order } from "../types";
 
 const SETTINGS_URL = "api/settings.php";
@@ -72,46 +71,29 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
     return await response.json();
   } catch (error) {
     console.error(`Pathao API Request Failed (${endpoint}):`, error);
-    return { error: true, message: error };
+    return { error: true, message: "Network error or invalid response from proxy" };
   }
 }
 
 /**
  * According to Pathao Documentation:
- * Response format: { "data": { "data": [ ... ] }, "code": 200, ... }
+ * List endpoints return: { data: { data: [ ... ] }, code: 200, ... }
  */
 const extractPathaoData = (res: any): any[] => {
   if (!res) return [];
 
-  // Check if there is an error reported by the proxy or Pathao
+  // Check for errors from proxy or API
   if (res.error || (res.code && res.code !== 200 && res.code !== "200")) {
-    console.warn("Pathao API returned error:", res.message || res);
+    console.warn("Pathao API Error:", res.message || res);
     return [];
   }
 
-  // Pathao's data is usually inside data.data
-  let result = res.data;
-
-  // Handle double JSON stringification if it happens in the proxy
-  if (typeof result === 'string') {
-    try {
-      result = JSON.parse(result);
-    } catch (e) {
-      return [];
-    }
+  // Handle { data: { data: [] } } structure for list endpoints
+  if (res.data && res.data.data && Array.isArray(res.data.data)) {
+    return res.data.data;
   }
 
-  // If the structure is { data: [ ... ] }
-  if (result && result.data && Array.isArray(result.data)) {
-    return result.data;
-  }
-
-  // If the structure is already an array
-  if (Array.isArray(result)) {
-    return result;
-  }
-
-  // Fallback: If it's still at the top level
+  // Handle { data: [] } structure just in case
   if (res.data && Array.isArray(res.data)) {
     return res.data;
   }
@@ -120,19 +102,19 @@ const extractPathaoData = (res: any): any[] => {
 };
 
 export const getPathaoCities = async () => {
-  // CORRECT ENDPOINT: /aladdin/api/v1/city-list
+  // Documentation Endpoint: /aladdin/api/v1/city-list
   const res = await pathaoRequest('aladdin/api/v1/city-list', 'GET');
   return extractPathaoData(res);
 };
 
 export const getPathaoZones = async (cityId: number) => {
-  // CORRECT ENDPOINT: /aladdin/api/v1/cities/{city_id}/zone-list
+  // Documentation Endpoint: /aladdin/api/v1/cities/{city_id}/zone-list
   const res = await pathaoRequest(`aladdin/api/v1/cities/${cityId}/zone-list`, 'GET');
   return extractPathaoData(res);
 };
 
 export const getPathaoAreas = async (zoneId: number) => {
-  // CORRECT ENDPOINT: /aladdin/api/v1/zones/{zone_id}/area-list
+  // Documentation Endpoint: /aladdin/api/v1/zones/{zone_id}/area-list
   const res = await pathaoRequest(`aladdin/api/v1/zones/${zoneId}/area-list`, 'GET');
   return extractPathaoData(res);
 };
@@ -150,15 +132,16 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     recipient_city: location.city,
     recipient_zone: location.zone,
     recipient_area: location.area,
-    delivery_type: 48, // Standard (48 in docs)
-    item_type: 2, // Parcel (2 in docs)
-    special_instruction: "Fragile",
-    item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0),
+    delivery_type: 48, // 48 for Normal Delivery
+    item_type: 2, // 2 for Parcel
+    special_instruction: "Handle with care",
+    item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0) || 1,
     item_weight: "0.5",
     amount_to_collect: order.total,
     item_description: order.products.map(p => p.name).join(', ')
   };
 
+  // The proxy now returns Pathao's response directly
   const res = await pathaoRequest('aladdin/api/v1/orders', 'POST', payload);
   return res;
 };
