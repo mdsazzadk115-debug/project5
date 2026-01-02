@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Wallet, 
@@ -20,16 +19,16 @@ import {
   Phone,
   MapPin,
   CircleDollarSign,
-  FileText
+  FileText,
+  AlertTriangle
 } from 'lucide-react';
-// Fixed: Removed createManualCourierOrder from imports as it is not exported from courierService
 import { 
   getCourierBalance, 
   getCourierConfig, 
   saveTrackingLocally, 
   getDeliveryStatus
 } from '../services/courierService';
-import { getPathaoConfig, getPathaoBalance } from '../services/pathaoService';
+import { getPathaoConfig, checkPathaoConnection } from '../services/pathaoService';
 import { Order } from '../types';
 
 type CourierType = 'Steadfast' | 'Pathao';
@@ -38,36 +37,41 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
   const [activeCourier, setActiveCourier] = useState<CourierType>('Steadfast');
   const [balance, setBalance] = useState<number>(0);
   const [isApiActive, setIsApiActive] = useState<boolean>(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Manual Tracking & Creation States
-  const [manualTrackingCode, setManualTrackingCode] = useState('');
-  const [isAddingTracking, setIsAddingTracking] = useState(false);
-  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
-
   const loadData = async () => {
     setLoading(true);
+    setConnectionError(null);
+    
     if (activeCourier === 'Steadfast') {
       const config = await getCourierConfig();
       if (config && config.apiKey) {
         setIsConfigured(true);
-        const bal = await getCourierBalance();
-        setBalance(bal);
-        setIsApiActive(true);
+        try {
+          const bal = await getCourierBalance();
+          setBalance(bal);
+          setIsApiActive(true);
+        } catch (e: any) {
+          setIsApiActive(false);
+          setConnectionError("Steadfast API key is invalid or unauthorized.");
+        }
       } else {
         setIsConfigured(false);
         setIsApiActive(false);
       }
     } else {
       const config = await getPathaoConfig();
-      if (config && config.clientId) {
+      if (config && config.clientId && config.clientSecret) {
         setIsConfigured(true);
-        const status = await getPathaoBalance();
-        setIsApiActive(status === 1);
-        setBalance(0); // Pathao uses billing, no direct "balance" shown usually
+        const diagnostic = await checkPathaoConnection();
+        setIsApiActive(diagnostic.success);
+        if (!diagnostic.success) {
+          setConnectionError(diagnostic.message);
+        }
+        setBalance(0); 
       } else {
         setIsConfigured(false);
         setIsApiActive(false);
@@ -90,7 +94,6 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
   }, [orders, activeCourier]);
 
   const recentConsignments = useMemo(() => {
-    // Crucial fix: Filtering orders by the active courier name
     let filtered = orders.filter(o => o.courier_tracking_code && (o.courier_name === activeCourier || (!o.courier_name && activeCourier === 'Steadfast')));
     
     if (searchTerm) {
@@ -112,14 +115,10 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
     return 'bg-gray-100 text-gray-600 border-gray-200';
   };
 
-  const themeColor = activeCourier === 'Steadfast' ? 'orange' : 'red';
-  const themeBg = activeCourier === 'Steadfast' ? 'bg-orange-600' : 'bg-red-600';
   const themeText = activeCourier === 'Steadfast' ? 'text-orange-600' : 'text-red-600';
-  const themeBorder = activeCourier === 'Steadfast' ? 'border-orange-100' : 'border-red-100';
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
-      {/* Courier Switcher Tabs */}
       <div className="flex p-1.5 bg-white rounded-2xl border border-gray-100 shadow-sm w-fit">
         <button 
           onClick={() => setActiveCourier('Steadfast')}
@@ -156,8 +155,19 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
           <AlertCircle size={24} className="shrink-0 text-amber-500" />
           <div>
             <p className="text-sm font-bold">{activeCourier} Not Configured</p>
-            <p className="text-xs opacity-80">Check Settings to add API credentials.</p>
+            <p className="text-xs opacity-80">Check Settings (Gear Icon) to add your {activeCourier} API credentials.</p>
           </div>
+        </div>
+      )}
+
+      {connectionError && (
+        <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-center gap-3 text-red-700 shadow-sm animate-in slide-in-from-top-2">
+          <AlertTriangle size={20} className="shrink-0 text-red-500" />
+          <div className="flex-1">
+            <p className="text-xs font-bold uppercase tracking-tight">Connection Problem Detected</p>
+            <p className="text-xs opacity-90">{connectionError}</p>
+          </div>
+          <button onClick={loadData} className="text-[10px] font-bold underline uppercase">Try Again</button>
         </div>
       )}
 
@@ -187,7 +197,7 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-6 group hover:border-emerald-200 transition-all">
-          <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform ${isApiActive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
             <CheckCircle2 size={28} />
           </div>
           <div>

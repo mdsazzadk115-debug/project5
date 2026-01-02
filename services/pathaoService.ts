@@ -53,7 +53,7 @@ export const savePathaoConfig = async (config: PathaoConfig) => {
 async function pathaoRequest(endpoint: string, method: string = 'GET', body: any = null) {
   const config = await getPathaoConfig();
   if (!config || !config.clientId) {
-    throw new Error("Pathao not configured");
+    return { error: true, message: "Pathao is not configured in settings." };
   }
 
   try {
@@ -68,10 +68,21 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
       })
     });
 
-    return await response.json();
-  } catch (error) {
+    const result = await response.json();
+    
+    // Pathao usually returns errors in a specific format
+    if (result.code !== 200 && result.code !== "200") {
+      return { 
+        error: true, 
+        message: result.message || (result.error ? JSON.stringify(result.error) : "API Error"),
+        code: result.code 
+      };
+    }
+
+    return result;
+  } catch (error: any) {
     console.error(`Pathao API Request Failed (${endpoint}):`, error);
-    return { error: true, message: "Network error or invalid response from proxy" };
+    return { error: true, message: "Server connection failed. Check your internet or proxy script." };
   }
 }
 
@@ -79,37 +90,33 @@ export const getPathaoOrderStatus = async (trackingCode: string) => {
   return await pathaoRequest(`aladdin/api/v1/orders/${trackingCode}`, 'GET');
 };
 
-export const getPathaoBalance = async () => {
-  // Pathao doesn't have a direct "balance" API like Steadfast in their merchant API usually,
-  // but we can check store connectivity or fetch a summary.
-  // For now we'll return a static "API Active" or placeholder.
-  const res = await pathaoRequest('aladdin/api/v1/stores', 'GET');
-  return res.code === 200 ? 1 : 0; // Return 1 if store is accessible
+/**
+ * Enhanced diagnostic for connection status
+ */
+export const checkPathaoConnection = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    const res = await pathaoRequest('aladdin/api/v1/stores', 'GET');
+    if (res.error) {
+      return { success: false, message: res.message };
+    }
+    if (res.code === 200 || res.code === "200") {
+      return { success: true, message: "Successfully connected to Pathao API" };
+    }
+    return { success: false, message: res.message || "Failed to fetch stores." };
+  } catch (e: any) {
+    return { success: false, message: e.message || "Unknown connection error" };
+  }
 };
 
-/**
- * According to Pathao Documentation:
- * List endpoints return: { data: { data: [ ... ] }, code: 200, ... }
- */
+export const getPathaoBalance = async () => {
+  const diagnostic = await checkPathaoConnection();
+  return diagnostic.success ? 1 : 0;
+};
+
 const extractPathaoData = (res: any): any[] => {
-  if (!res) return [];
-
-  // Check for errors from proxy or API
-  if (res.error || (res.code && res.code !== 200 && res.code !== "200")) {
-    console.warn("Pathao API Error:", res.message || res);
-    return [];
-  }
-
-  // Pathao returns data in nested layers: res.data.data
-  if (res.data && res.data.data && Array.isArray(res.data.data)) {
-    return res.data.data;
-  }
-
-  // For some endpoints it might just be res.data
-  if (res.data && Array.isArray(res.data)) {
-    return res.data;
-  }
-
+  if (!res || res.error) return [];
+  if (res.data && res.data.data && Array.isArray(res.data.data)) return res.data.data;
+  if (res.data && Array.isArray(res.data)) return res.data;
   return [];
 };
 
@@ -141,8 +148,8 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     recipient_city: location.city,
     recipient_zone: location.zone,
     recipient_area: location.area,
-    delivery_type: 48, // 48 for Normal Delivery
-    item_type: 2, // 2 for Parcel
+    delivery_type: 48, 
+    item_type: 2, 
     special_instruction: "Handle with care",
     item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0) || 1,
     item_weight: "0.5",
@@ -150,6 +157,5 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     item_description: order.products.map(p => p.name).join(', ')
   };
 
-  const res = await pathaoRequest('aladdin/api/v1/orders', 'POST', payload);
-  return res;
+  return await pathaoRequest('aladdin/api/v1/orders', 'POST', payload);
 };
