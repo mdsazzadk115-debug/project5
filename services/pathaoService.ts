@@ -70,11 +70,19 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
 
     const result = await response.json();
     
-    // Pathao usually returns errors in a specific format
-    if (result.code !== 200 && result.code !== "200") {
+    // Pathao status codes can be 200 (Success), 201 (Created), 202 (Accepted)
+    const successCodes = [200, 201, 202, "200", "201", "202"];
+    
+    if (!successCodes.includes(result.code)) {
+      // Better error message extraction based on documentation common patterns
+      const errorMessage = result.message || 
+                          result.error_description || 
+                          result.error || 
+                          (result.errors ? JSON.stringify(result.errors) : "API Connection Error");
+      
       return { 
         error: true, 
-        message: result.message || (result.error ? JSON.stringify(result.error) : "API Error"),
+        message: errorMessage,
         code: result.code 
       };
     }
@@ -82,12 +90,15 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
     return result;
   } catch (error: any) {
     console.error(`Pathao API Request Failed (${endpoint}):`, error);
-    return { error: true, message: "Server connection failed. Check your internet or proxy script." };
+    return { error: true, message: "Network error. Please check your hosting/proxy script." };
   }
 }
 
+/**
+ * According to Documentation: /aladdin/api/v1/orders/{{consignment_id}}/info
+ */
 export const getPathaoOrderStatus = async (trackingCode: string) => {
-  return await pathaoRequest(`aladdin/api/v1/orders/${trackingCode}`, 'GET');
+  return await pathaoRequest(`aladdin/api/v1/orders/${trackingCode}/info`, 'GET');
 };
 
 /**
@@ -99,6 +110,7 @@ export const checkPathaoConnection = async (): Promise<{ success: boolean; messa
     if (res.error) {
       return { success: false, message: res.message };
     }
+    // Documentation says stores API returns code 200 on success
     if (res.code === 200 || res.code === "200") {
       return { success: true, message: "Successfully connected to Pathao API" };
     }
@@ -115,6 +127,7 @@ export const getPathaoBalance = async () => {
 
 const extractPathaoData = (res: any): any[] => {
   if (!res || res.error) return [];
+  // Pathao list responses wrap data inside data object: { data: { data: [...] } }
   if (res.data && res.data.data && Array.isArray(res.data.data)) return res.data.data;
   if (res.data && Array.isArray(res.data)) return res.data;
   return [];
@@ -139,6 +152,7 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
   const config = await getPathaoConfig();
   if (!config) throw new Error("Pathao config missing");
 
+  // According to Docs, amount_to_collect must be integer, weight should be numeric
   const payload = {
     store_id: parseInt(config.storeId),
     merchant_order_id: order.id,
@@ -151,10 +165,10 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     delivery_type: 48, 
     item_type: 2, 
     special_instruction: "Handle with care",
-    item_quantity: order.products.reduce((acc, p) => acc + p.qty, 0) || 1,
-    item_weight: "0.5",
-    amount_to_collect: order.total,
-    item_description: order.products.map(p => p.name).join(', ')
+    item_quantity: Math.max(1, order.products.reduce((acc, p) => acc + p.qty, 0)),
+    item_weight: 0.5, // Document says float
+    amount_to_collect: Math.round(order.total), // Document says integer
+    item_description: order.products.map(p => p.name).join(', ').substring(0, 200)
   };
 
   return await pathaoRequest('aladdin/api/v1/orders', 'POST', payload);
