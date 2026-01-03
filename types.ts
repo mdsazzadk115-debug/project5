@@ -27,6 +27,7 @@ export interface Customer {
   phone: string;
   avatar: string;
   orderCount: number;
+  address?: string;
 }
 
 export interface OrderStatusHistory {

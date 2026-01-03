@@ -14,7 +14,11 @@ import {
   CheckCircle,
   Truck,
   Send,
-  ExternalLink
+  ExternalLink,
+  User,
+  Phone,
+  Mail,
+  MapPin
 } from 'lucide-react';
 import { InventoryProduct, Customer, Product, Order } from '../types';
 
@@ -24,19 +28,31 @@ interface POSViewProps {
   categories: { id: number, name: string }[];
   onPlaceOrder: (order: Omit<Order, 'id' | 'timestamp' | 'date' | 'statusHistory'>) => Promise<Order | null>;
   onSendToCourier: (order: Order, courier: 'Steadfast' | 'Pathao') => Promise<any>;
+  onAddCustomer: (customer: Customer) => void;
 }
 
 interface CartItem extends Product {
   originalStock: number;
 }
 
-export const POSView: React.FC<POSViewProps> = ({ products, customers, categories, onPlaceOrder, onSendToCourier }) => {
+export const POSView: React.FC<POSViewProps> = ({ 
+  products, 
+  customers, 
+  categories, 
+  onPlaceOrder, 
+  onSendToCourier,
+  onAddCustomer 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [extraDiscount, setExtraDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'Hand Cash' | 'Card Pay'>('Hand Cash');
+  
+  // Modal states
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
   
   // Placement states
   const [isPlacing, setIsPlacing] = useState(false);
@@ -90,6 +106,25 @@ export const POSView: React.FC<POSViewProps> = ({ products, customers, categorie
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const finalTotal = subtotal - extraDiscount;
 
+  const handleAddCustomerSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomer.name || !newCustomer.phone) return alert("Name and Phone are required!");
+    
+    const customer: Customer = {
+      name: newCustomer.name,
+      phone: newCustomer.phone,
+      email: newCustomer.email || `${newCustomer.phone}@example.com`,
+      address: newCustomer.address,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(newCustomer.name)}&background=random`,
+      orderCount: 0
+    };
+    
+    onAddCustomer(customer);
+    setSelectedCustomer(customer);
+    setNewCustomer({ name: '', phone: '', email: '', address: '' });
+    setShowAddCustomerModal(false);
+  };
+
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return alert("Cart is empty!");
     if (!selectedCustomer) return alert("Please select a customer!");
@@ -98,7 +133,7 @@ export const POSView: React.FC<POSViewProps> = ({ products, customers, categorie
     try {
       const order = await onPlaceOrder({
         customer: selectedCustomer,
-        address: "Point of Sale Entry",
+        address: selectedCustomer.address || "Point of Sale Entry",
         products: cart.map(({ originalStock, ...rest }) => rest),
         paymentMethod,
         subtotal,
@@ -263,11 +298,14 @@ export const POSView: React.FC<POSViewProps> = ({ products, customers, categorie
                 onChange={(e) => setSelectedCustomer(customers.find(c => c.email === e.target.value) || null)}
               >
                 <option value="">Select Customer</option>
-                {customers.map(c => <option key={c.email} value={c.email}>{c.name} ({c.phone})</option>)}
+                {customers.map(c => <option key={c.phone + c.email} value={c.email}>{c.name} ({c.phone})</option>)}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
             </div>
-            <button className="w-12 h-12 bg-orange-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-orange-100 hover:bg-orange-700 active:scale-95 transition-all">
+            <button 
+              onClick={() => setShowAddCustomerModal(true)}
+              className="w-12 h-12 bg-orange-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-orange-100 hover:bg-orange-700 active:scale-95 transition-all"
+            >
               <UserPlus size={20} />
             </button>
           </div>
@@ -371,6 +409,96 @@ export const POSView: React.FC<POSViewProps> = ({ products, customers, categorie
           </div>
         </div>
       </div>
+
+      {/* Add Customer Modal */}
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
+            <div className="p-8 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-black text-gray-800">Add New Customer</h3>
+                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Quick Registration Terminal</p>
+              </div>
+              <button onClick={() => setShowAddCustomerModal(false)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddCustomerSubmit} className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <User size={12} className="text-orange-500" /> Full Name
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Enter customer name"
+                    value={newCustomer.name}
+                    onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <Phone size={12} className="text-orange-500" /> Phone Number
+                  </label>
+                  <input 
+                    type="tel" 
+                    required
+                    placeholder="017xxxxxxxx"
+                    value={newCustomer.phone}
+                    onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <Mail size={12} className="text-orange-500" /> Email Address (Optional)
+                  </label>
+                  <input 
+                    type="email" 
+                    placeholder="customer@email.com"
+                    value={newCustomer.email}
+                    onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <MapPin size={12} className="text-orange-500" /> Delivery Address
+                  </label>
+                  <textarea 
+                    placeholder="Enter full delivery address"
+                    value={newCustomer.address}
+                    onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all h-20 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowAddCustomerModal(false)}
+                  className="flex-1 py-4 bg-gray-100 text-gray-500 font-black rounded-2xl text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
+                >
+                  Discard
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-4 bg-orange-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-orange-100 hover:bg-orange-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <Check size={16} /> Save Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Post-Order Action Modal */}
       {placedOrder && (

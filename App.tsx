@@ -177,6 +177,7 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [categories, setCategories] = useState<WPCategory[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [manualCustomers, setManualCustomers] = useState<Customer[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [hasConfig, setHasConfig] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -195,6 +196,8 @@ const App: React.FC = () => {
 
   const customers = useMemo(() => {
     const customerMap = new Map<string, Customer>();
+    
+    // Process orders to get customers
     orders.forEach(o => {
       const existing = customerMap.get(o.customer.phone);
       if (existing) {
@@ -203,8 +206,16 @@ const App: React.FC = () => {
         customerMap.set(o.customer.phone, { ...o.customer, orderCount: 1 });
       }
     });
+
+    // Add manually created customers if they don't exist yet in the orders map
+    manualCustomers.forEach(mc => {
+      if (!customerMap.has(mc.phone)) {
+        customerMap.set(mc.phone, mc);
+      }
+    });
+
     return Array.from(customerMap.values());
-  }, [orders]);
+  }, [orders, manualCustomers]);
 
   const loadAllData = async () => {
     const config = await getWPConfig();
@@ -289,8 +300,15 @@ const App: React.FC = () => {
     };
     
     setOrders(prev => [newOrder, ...prev]);
-    // In a real app, this should await database confirmation
     return newOrder;
+  };
+
+  const handleAddManualCustomer = (customer: Customer) => {
+    setManualCustomers(prev => {
+      // Avoid duplicate phones
+      if (prev.some(c => c.phone === customer.phone)) return prev;
+      return [customer, ...prev];
+    });
   };
 
   const handleSendToCourierDirectly = async (order: Order, courier: 'Steadfast' | 'Pathao') => {
@@ -307,9 +325,6 @@ const App: React.FC = () => {
       }
       return res;
     } else {
-      // For Pathao, we need more specific location data which usually comes from a modal.
-      // For POS direct send, we might use default merchant locations or require a quick area selector.
-      // This is a simplified version; in production you'd pop the Pathao location modal here.
       alert("Pathao requires location selection. Please send via Order Detail view.");
       throw new Error("Pathao requires detailed area selection.");
     }
@@ -401,6 +416,7 @@ const App: React.FC = () => {
             categories={categories} 
             onPlaceOrder={handlePlacePOSOrder}
             onSendToCourier={handleSendToCourierDirectly}
+            onAddCustomer={handleAddManualCustomer}
           />
         );
       case 'orders':
