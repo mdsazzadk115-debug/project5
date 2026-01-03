@@ -6,9 +6,6 @@ const PROXY_URL = "api/courier.php";
 const TRACKING_URL = "api/local_tracking.php";
 const SETTINGS_URL = "api/settings.php";
 
-/**
- * Smartly identifies the courier based on the tracking code pattern.
- */
 export const identifyCourierByTrackingCode = (trackingCode: string): 'Steadfast' | 'Pathao' => {
   if (!trackingCode) return 'Steadfast';
   const isNumeric = /^\d+$/.test(trackingCode);
@@ -56,9 +53,17 @@ export const fetchAllLocalTracking = async (): Promise<any[]> => {
   try {
     const res = await fetch(TRACKING_URL);
     if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      // In case PHP returns non-JSON (like an error message)
+      console.error("Tracking API returned non-JSON:", text);
+      return [];
+    }
   } catch (e) {
+    console.error("Fetch local tracking error:", e);
     return [];
   }
 };
@@ -71,15 +76,16 @@ export const saveTrackingLocally = async (orderId: string, trackingCode: string,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        order_id: orderId,
+        order_id: String(orderId),
         tracking_code: trackingCode,
         status: status,
         courier_name: detectedCourier 
       })
     });
+    
     return await response.json();
   } catch (e) {
-    console.error("Local tracking update failed:", e);
+    console.error("Local tracking save failed:", e);
     return { status: "error" };
   }
 };
@@ -148,7 +154,8 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
 
   for (let i = 0; i < updatedOrders.length; i++) {
     const order = updatedOrders[i];
-    const trackingInfo = localTracking.find(t => t.id === order.id);
+    // String comparison for IDs to be safe with MySQL/JSON types
+    const trackingInfo = localTracking.find(t => String(t.id) === String(order.id));
     
     if (trackingInfo) {
       const courier = trackingInfo.courier_name || identifyCourierByTrackingCode(trackingInfo.courier_tracking_code);

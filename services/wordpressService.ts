@@ -63,8 +63,13 @@ const fetchLocalTrackingData = async (): Promise<any[]> => {
   try {
     const res = await fetch(TRACKING_URL);
     if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      return [];
+    }
   } catch (e) {
     return [];
   }
@@ -90,7 +95,8 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
     if (!Array.isArray(allWcOrders)) return [];
 
     return allWcOrders.map((wc: any): Order => {
-      const tracking = localTracking.find(t => t.id === wc.id.toString());
+      // Use String comparison for robustness
+      const tracking = localTracking.find(t => String(t.id) === String(wc.id));
       let mappedStatus: Order['status'] = 'Pending';
       
       if (tracking && tracking.courier_status) {
@@ -200,4 +206,3 @@ export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
     return [];
   }
 };
-    
