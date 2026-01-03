@@ -43,12 +43,37 @@ export const getPathaoConfig = async (): Promise<PathaoConfig | null> => {
     username: '',
     password: '',
     storeId: '',
-    isSandbox: true
+    isSandbox: true,
+    webhookSecret: ''
   };
 };
 
 export const savePathaoConfig = async (config: PathaoConfig) => {
   await saveSetting('pathao_config', config);
+};
+
+/**
+ * Maps Pathao Webhook events to application internal order statuses
+ */
+export const mapPathaoEventToStatus = (event: string): Order['status'] => {
+  const e = event.toLowerCase();
+  
+  // Delivered status
+  if (e.includes('delivered') || e.includes('paid')) return 'Delivered';
+  
+  // Returned status
+  if (e.includes('returned') || e.includes('failed')) return 'Returned';
+  
+  // Cancelled/Rejected status
+  if (e.includes('cancelled') || e.includes('rejected')) return 'Rejected';
+  
+  // Shipping status
+  if (e.includes('transit') || e.includes('sorting') || e.includes('assigned') || e.includes('picked')) return 'Shipping';
+  
+  // Packaging status
+  if (e.includes('created') || e.includes('requested')) return 'Packaging';
+  
+  return 'Pending';
 };
 
 async function pathaoRequest(endpoint: string, method: string = 'GET', body: any = null) {
@@ -70,35 +95,22 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
     });
 
     const result = await response.json();
-    
-    // Pathao status codes can be 200 (Success), 201 (Created), 202 (Accepted)
     const successCodes = [200, 201, 202, "200", "201", "202"];
     
     if (!successCodes.includes(result.code)) {
-      // Pathao often returns specific validation errors in 'errors' object
       let errorMessage = result.message || "API Connection Error";
-      
-      if (result.errors) {
-        if (typeof result.errors === 'object') {
-          const firstErrorKey = Object.keys(result.errors)[0];
-          const firstErrorVal = result.errors[firstErrorKey];
-          errorMessage = `${firstErrorKey}: ${Array.isArray(firstErrorVal) ? firstErrorVal[0] : firstErrorVal}`;
-        } else {
-          errorMessage = JSON.stringify(result.errors);
-        }
+      if (result.errors && typeof result.errors === 'object') {
+        const firstErrorKey = Object.keys(result.errors)[0];
+        const firstErrorVal = result.errors[firstErrorKey];
+        errorMessage = `${firstErrorKey}: ${Array.isArray(firstErrorVal) ? firstErrorVal[0] : firstErrorVal}`;
       }
-      
-      return { 
-        error: true, 
-        message: errorMessage,
-        code: result.code 
-      };
+      return { error: true, message: errorMessage, code: result.code };
     }
 
     return result;
   } catch (error: any) {
     console.error(`Pathao API Request Failed (${endpoint}):`, error);
-    return { error: true, message: "Network error. Please check your hosting/proxy script." };
+    return { error: true, message: "Network error." };
   }
 }
 
@@ -109,61 +121,36 @@ export const getPathaoOrderStatus = async (trackingCode: string) => {
 export const checkPathaoConnection = async (): Promise<{ success: boolean; message: string }> => {
   try {
     const res = await pathaoRequest('aladdin/api/v1/stores', 'GET');
-    if (res.error) {
-      return { success: false, message: res.message };
-    }
-    if (res.code === 200 || res.code === "200") {
-      return { success: true, message: "Successfully connected to Pathao API" };
-    }
-    return { success: false, message: res.message || "Failed to fetch stores." };
+    if (res.error) return { success: false, message: res.message };
+    return { success: true, message: "Successfully connected to Pathao API" };
   } catch (e: any) {
     return { success: false, message: e.message || "Unknown connection error" };
   }
 };
 
-export const getPathaoBalance = async () => {
-  const diagnostic = await checkPathaoConnection();
-  return diagnostic.success ? 1 : 0;
-};
-
-const extractPathaoData = (res: any): any[] => {
-  if (!res || res.error) return [];
-  if (res.data && res.data.data && Array.isArray(res.data.data)) return res.data.data;
-  if (res.data && Array.isArray(res.data)) return res.data;
-  return [];
-};
-
 export const getPathaoCities = async () => {
   const res = await pathaoRequest('aladdin/api/v1/city-list', 'GET');
-  return extractPathaoData(res);
+  return res.data?.data || res.data || [];
 };
 
 export const getPathaoZones = async (cityId: number) => {
   const res = await pathaoRequest(`aladdin/api/v1/cities/${cityId}/zone-list`, 'GET');
-  return extractPathaoData(res);
+  return res.data?.data || res.data || [];
 };
 
 export const getPathaoAreas = async (zoneId: number) => {
   const res = await pathaoRequest(`aladdin/api/v1/zones/${zoneId}/area-list`, 'GET');
-  return extractPathaoData(res);
+  return res.data?.data || res.data || [];
 };
 
 export const createPathaoOrder = async (order: Order, location: { city: number, zone: number, area: number }) => {
   const config = await getPathaoConfig();
   if (!config) throw new Error("Pathao config missing");
 
-  // Pathao strictly requires 11 digit phone number starting with 01
   let cleanPhone = order.customer.phone.trim().replace(/[^\d]/g, '');
-  if (cleanPhone.startsWith('8801')) {
-    cleanPhone = cleanPhone.substring(2);
-  } else if (cleanPhone.startsWith('801')) {
-    cleanPhone = '0' + cleanPhone.substring(1);
-  }
-  
-  // Ensure it starts with 0
-  if (!cleanPhone.startsWith('0')) {
-      cleanPhone = '0' + cleanPhone;
-  }
+  if (cleanPhone.startsWith('8801')) cleanPhone = cleanPhone.substring(2);
+  else if (cleanPhone.startsWith('801')) cleanPhone = '0' + cleanPhone.substring(1);
+  if (!cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
 
   const payload = {
     store_id: parseInt(config.storeId),
@@ -176,7 +163,6 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     recipient_area: location.area,
     delivery_type: 48, 
     item_type: 2, 
-    special_instruction: "Handle with care",
     item_quantity: Math.max(1, order.products.reduce((acc, p) => acc + p.qty, 0)),
     item_weight: 0.5,
     amount_to_collect: Math.round(order.total),

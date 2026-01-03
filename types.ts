@@ -78,4 +78,5 @@ export interface PathaoConfig {
   password: string;
   storeId: string;
   isSandbox: boolean;
+  webhookSecret?: string;
 }

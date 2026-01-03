@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Bell, Globe, RefreshCcw, Calendar, ChevronDown, LayoutGrid, Settings, X, Truck } from 'lucide-react';
+import { Search, Bell, Globe, RefreshCcw, Calendar, ChevronDown, LayoutGrid, Settings, X, Truck, Copy, Check } from 'lucide-react';
 import { getWPConfig, saveWPConfig, WPConfig } from '../services/wordpressService';
 import { getCourierConfig, saveCourierConfig } from '../services/courierService';
 import { getPathaoConfig, savePathaoConfig } from '../services/pathaoService';
@@ -12,8 +12,9 @@ export const TopBar: React.FC = () => {
   const [config, setConfig] = useState<WPConfig>({ url: '', consumerKey: '', consumerSecret: '' });
   const [courierConfig, setCourierConfig] = useState<CourierConfig>({ apiKey: '', secretKey: '' });
   const [pathaoConfig, setPathaoConfig] = useState<PathaoConfig>({
-    clientId: '', clientSecret: '', username: '', password: '', storeId: '', isSandbox: true
+    clientId: '', clientSecret: '', username: '', password: '', storeId: '', isSandbox: true, webhookSecret: ''
   });
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -37,6 +38,14 @@ export const TopBar: React.FC = () => {
     }
     setShowSettings(false);
     window.location.reload();
+  };
+
+  const webhookUrl = `${window.location.origin}/api/pathao_webhook.php`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -244,6 +253,38 @@ export const TopBar: React.FC = () => {
                       onChange={(e) => setPathaoConfig({...pathaoConfig, storeId: e.target.value})}
                     />
                   </div>
+                  
+                  {/* Webhook Section */}
+                  <div className="pt-2 border-t border-gray-100 mt-2 space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-orange-600 uppercase">Webhook URL (Copy to Pathao Panel)</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          readOnly
+                          value={webhookUrl}
+                          className="flex-1 p-2 bg-gray-100 border border-gray-200 rounded text-[10px] font-mono outline-none"
+                        />
+                        <button 
+                          onClick={copyToClipboard}
+                          className="p-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
+                        >
+                          {copied ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Webhook Secret / Signature</label>
+                      <input 
+                        type="password" 
+                        placeholder="Provided by Pathao Integration"
+                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-lg text-sm outline-none focus:border-orange-500"
+                        value={pathaoConfig.webhookSecret || ''}
+                        onChange={(e) => setPathaoConfig({...pathaoConfig, webhookSecret: e.target.value})}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <input 
                       type="checkbox" 

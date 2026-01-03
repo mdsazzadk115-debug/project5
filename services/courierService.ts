@@ -1,6 +1,6 @@
 
 import { CourierConfig, Order } from "../types";
-import { getPathaoOrderStatus } from "./pathaoService";
+import { getPathaoOrderStatus, mapPathaoEventToStatus } from "./pathaoService";
 
 const PROXY_URL = "api/courier.php";
 const TRACKING_URL = "api/local_tracking.php";
@@ -8,8 +8,7 @@ const SETTINGS_URL = "api/settings.php";
 
 export const identifyCourierByTrackingCode = (trackingCode: string): 'Steadfast' | 'Pathao' => {
   if (!trackingCode) return 'Steadfast';
-  const isNumeric = /^\d+$/.test(trackingCode);
-  return isNumeric ? 'Pathao' : 'Steadfast';
+  return /^\d+$/.test(trackingCode) ? 'Pathao' : 'Steadfast';
 };
 
 const fetchSetting = async (key: string) => {
@@ -58,19 +57,15 @@ export const fetchAllLocalTracking = async (): Promise<any[]> => {
       const data = JSON.parse(text);
       return Array.isArray(data) ? data : [];
     } catch (e) {
-      // In case PHP returns non-JSON (like an error message)
-      console.error("Tracking API returned non-JSON:", text);
       return [];
     }
   } catch (e) {
-    console.error("Fetch local tracking error:", e);
     return [];
   }
 };
 
 export const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string, courier?: 'Steadfast' | 'Pathao') => {
   const detectedCourier = courier || identifyCourierByTrackingCode(trackingCode);
-  
   try {
     const response = await fetch(TRACKING_URL, {
       method: 'POST',
@@ -82,11 +77,30 @@ export const saveTrackingLocally = async (orderId: string, trackingCode: string,
         courier_name: detectedCourier 
       })
     });
-    
     return await response.json();
   } catch (e) {
     console.error("Local tracking save failed:", e);
     return { status: "error" };
+  }
+};
+
+export const getCourierBalance = async () => {
+  const config = await getCourierConfig();
+  if (!config || !config.apiKey) return 0;
+  try {
+    const response = await fetch(`${PROXY_URL}?action=balance`, {
+      method: 'GET',
+      headers: {
+        'Api-Key': config.apiKey,
+        'Secret-Key': config.secretKey,
+        'Content-Type': 'application/json'
+      }
+    });
+    const result = await response.json();
+    return result.current_balance || result.balance || 0;
+  } catch (error) {
+    console.error("Error fetching courier balance:", error);
+    return 0;
   }
 };
 
@@ -113,16 +127,9 @@ export const createSteadfastOrder = async (order: Order) => {
     });
 
     const result = await response.json();
-    
     if (result.status === 200 && result.consignment) {
-      await saveTrackingLocally(
-        order.id, 
-        result.consignment.tracking_code, 
-        result.consignment.status,
-        'Steadfast'
-      );
+      await saveTrackingLocally(order.id, result.consignment.tracking_code, result.consignment.status, 'Steadfast');
     }
-
     return result;
   } catch (error) {
     throw error;
@@ -132,7 +139,6 @@ export const createSteadfastOrder = async (order: Order) => {
 export const getDeliveryStatus = async (trackingCode: string) => {
   const config = await getCourierConfig();
   if (!config || !config.apiKey) return null;
-
   try {
     const response = await fetch(`${PROXY_URL}?action=status&tracking_code=${trackingCode}`, {
       method: 'GET',
@@ -154,84 +160,32 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
 
   for (let i = 0; i < updatedOrders.length; i++) {
     const order = updatedOrders[i];
-    // String comparison for IDs to be safe with MySQL/JSON types
     const trackingInfo = localTracking.find(t => String(t.id) === String(order.id));
-    
     if (trackingInfo) {
       const courier = trackingInfo.courier_name || identifyCourierByTrackingCode(trackingInfo.courier_tracking_code);
-      
+      let currentStatus = order.status;
+      let courierStatus = trackingInfo.courier_status;
+
+      // Special handling for Pathao events via webhook
+      if (courier === 'Pathao' && courierStatus) {
+        currentStatus = mapPathaoEventToStatus(courierStatus);
+      } else if (courierStatus) {
+        // Fallback for Steadfast polling
+        const cs = courierStatus.toLowerCase();
+        if (cs.includes('delivered')) currentStatus = 'Delivered';
+        else if (cs.includes('cancelled')) currentStatus = 'Cancelled';
+        else if (cs.includes('return')) currentStatus = 'Returned';
+      }
+
       updatedOrders[i] = {
         ...updatedOrders[i],
+        status: currentStatus,
         courier_name: courier as 'Steadfast' | 'Pathao',
         courier_tracking_code: trackingInfo.courier_tracking_code,
-        courier_status: trackingInfo.courier_status
+        courier_status: courierStatus
       };
     }
   }
 
-  const activeOrders = updatedOrders.filter(o => 
-    o.courier_tracking_code && 
-    !['Delivered', 'Cancelled', 'Returned'].includes(o.status)
-  );
-
-  for (let order of activeOrders) {
-    const courier = order.courier_name || identifyCourierByTrackingCode(order.courier_tracking_code!);
-    let courierStatus = '';
-
-    if (courier === 'Pathao') {
-      const rawStatusData = await getPathaoOrderStatus(order.courier_tracking_code!);
-      if (rawStatusData?.data?.order_status) {
-        courierStatus = rawStatusData.data.order_status;
-      }
-    } else {
-      const rawStatusData = await getDeliveryStatus(order.courier_tracking_code!);
-      if (rawStatusData?.status === 200 && rawStatusData.delivery_status) {
-        courierStatus = rawStatusData.delivery_status;
-      }
-    }
-
-    if (courierStatus) {
-      let newStatus: Order['status'] = order.status;
-      const cs = courierStatus.toLowerCase();
-
-      if (cs.includes('delivered')) newStatus = 'Delivered';
-      else if (cs.includes('cancelled')) newStatus = 'Cancelled';
-      else if (cs.includes('return')) newStatus = 'Returned';
-      else if (cs === 'pending' || cs === 'hold' || cs === 'packaging') newStatus = 'Packaging';
-      else if (cs !== 'unknown') newStatus = 'Shipping';
-
-      const idx = updatedOrders.findIndex(o => o.id === order.id);
-      if (idx !== -1 && (newStatus !== updatedOrders[idx].status || courierStatus !== updatedOrders[idx].courier_status)) {
-        updatedOrders[idx] = { 
-          ...updatedOrders[idx], 
-          status: newStatus, 
-          courier_status: courierStatus,
-          courier_name: courier
-        };
-        await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus, courier);
-      }
-    }
-  }
-
   return updatedOrders;
-};
-
-export const getCourierBalance = async () => {
-  const config = await getCourierConfig();
-  if (!config || !config.apiKey) return 0;
-
-  try {
-    const response = await fetch(`${PROXY_URL}?action=balance`, {
-      method: 'GET',
-      headers: {
-        'Api-Key': config.apiKey,
-        'Secret-Key': config.secretKey,
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = await response.json();
-    return data.current_balance || 0;
-  } catch (error) {
-    return 0;
-  }
 };
