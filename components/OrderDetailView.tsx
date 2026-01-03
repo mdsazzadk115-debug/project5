@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Printer, 
@@ -110,7 +111,6 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
           tracking: res.consignment.tracking_code,
           courier: 'Steadfast'
         });
-        // Courier name is already saved inside createSteadfastOrder but just for redundancy:
         await saveTrackingLocally(order.id, res.consignment.tracking_code, res.consignment.status, 'Steadfast');
         alert("Sent to Steadfast Courier Successfully!");
       } else {
@@ -135,13 +135,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack 
       if (res.data && res.data.consignment_id) {
         const tracking = res.data.consignment_id;
         setShippingResult({ tracking, courier: 'Pathao' });
-        // FIXED: Passing 'Pathao' as the courier name to saveTrackingLocally
         await saveTrackingLocally(order.id, tracking, 'Pending', 'Pathao');
         alert(`Sent to Pathao Successfully! Tracking: ${tracking}`);
         setShowPathaoModal(false);
       } else {
         const errorMsg = res.message || (res.error && res.error[0] ? res.error[0].message : "Failed to create Pathao order");
-        alert("Error: " + errorMsg);
+        alert("Pathao API Error: " + errorMsg);
       }
     } catch (e: any) {
       alert("Pathao Error: " + e.message);

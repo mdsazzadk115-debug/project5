@@ -1,3 +1,4 @@
+
 import { PathaoConfig, Order } from "../types";
 
 const SETTINGS_URL = "api/settings.php";
@@ -74,11 +75,18 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
     const successCodes = [200, 201, 202, "200", "201", "202"];
     
     if (!successCodes.includes(result.code)) {
-      // Better error message extraction based on documentation common patterns
-      const errorMessage = result.message || 
-                          result.error_description || 
-                          result.error || 
-                          (result.errors ? JSON.stringify(result.errors) : "API Connection Error");
+      // Pathao often returns specific validation errors in 'errors' object
+      let errorMessage = result.message || "API Connection Error";
+      
+      if (result.errors) {
+        if (typeof result.errors === 'object') {
+          const firstErrorKey = Object.keys(result.errors)[0];
+          const firstErrorVal = result.errors[firstErrorKey];
+          errorMessage = `${firstErrorKey}: ${Array.isArray(firstErrorVal) ? firstErrorVal[0] : firstErrorVal}`;
+        } else {
+          errorMessage = JSON.stringify(result.errors);
+        }
+      }
       
       return { 
         error: true, 
@@ -94,23 +102,16 @@ async function pathaoRequest(endpoint: string, method: string = 'GET', body: any
   }
 }
 
-/**
- * According to Documentation: /aladdin/api/v1/orders/{{consignment_id}}/info
- */
 export const getPathaoOrderStatus = async (trackingCode: string) => {
   return await pathaoRequest(`aladdin/api/v1/orders/${trackingCode}/info`, 'GET');
 };
 
-/**
- * Enhanced diagnostic for connection status
- */
 export const checkPathaoConnection = async (): Promise<{ success: boolean; message: string }> => {
   try {
     const res = await pathaoRequest('aladdin/api/v1/stores', 'GET');
     if (res.error) {
       return { success: false, message: res.message };
     }
-    // Documentation says stores API returns code 200 on success
     if (res.code === 200 || res.code === "200") {
       return { success: true, message: "Successfully connected to Pathao API" };
     }
@@ -127,7 +128,6 @@ export const getPathaoBalance = async () => {
 
 const extractPathaoData = (res: any): any[] => {
   if (!res || res.error) return [];
-  // Pathao list responses wrap data inside data object: { data: { data: [...] } }
   if (res.data && res.data.data && Array.isArray(res.data.data)) return res.data.data;
   if (res.data && Array.isArray(res.data)) return res.data;
   return [];
@@ -152,13 +152,25 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
   const config = await getPathaoConfig();
   if (!config) throw new Error("Pathao config missing");
 
-  // According to Docs, amount_to_collect must be integer, weight should be numeric
+  // Pathao strictly requires 11 digit phone number starting with 01
+  let cleanPhone = order.customer.phone.trim().replace(/[^\d]/g, '');
+  if (cleanPhone.startsWith('8801')) {
+    cleanPhone = cleanPhone.substring(2);
+  } else if (cleanPhone.startsWith('801')) {
+    cleanPhone = '0' + cleanPhone.substring(1);
+  }
+  
+  // Ensure it starts with 0
+  if (!cleanPhone.startsWith('0')) {
+      cleanPhone = '0' + cleanPhone;
+  }
+
   const payload = {
     store_id: parseInt(config.storeId),
     merchant_order_id: order.id,
-    recipient_name: order.customer.name,
-    recipient_phone: order.customer.phone,
-    recipient_address: order.address,
+    recipient_name: order.customer.name.substring(0, 50),
+    recipient_phone: cleanPhone,
+    recipient_address: order.address.substring(0, 200),
     recipient_city: location.city,
     recipient_zone: location.zone,
     recipient_area: location.area,
@@ -166,8 +178,8 @@ export const createPathaoOrder = async (order: Order, location: { city: number, 
     item_type: 2, 
     special_instruction: "Handle with care",
     item_quantity: Math.max(1, order.products.reduce((acc, p) => acc + p.qty, 0)),
-    item_weight: 0.5, // Document says float
-    amount_to_collect: Math.round(order.total), // Document says integer
+    item_weight: 0.5,
+    amount_to_collect: Math.round(order.total),
     item_description: order.products.map(p => p.name).join(', ').substring(0, 200)
   };
 
