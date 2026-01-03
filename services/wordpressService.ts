@@ -78,24 +78,25 @@ const fetchLocalTrackingData = async (): Promise<any[]> => {
 export const fetchOrdersFromWP = async (): Promise<Order[]> => {
   try {
     const config = await getWPConfig();
-    if (!config || !config.url || !config.consumerKey) {
-      return [];
-    }
-
-    const { url, consumerKey, consumerSecret } = config;
-    const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
     const localTracking = await fetchLocalTrackingData();
     
-    const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
+    let allWcOrders: any[] = [];
+    if (config && config.url && config.consumerKey) {
+      const { url, consumerKey, consumerSecret } = config;
+      const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+      const apiBase = `${baseUrl}/wp-json/wc/v3/orders?consumer_key=${consumerKey}&consumer_secret=${consumerSecret}&per_page=100`;
+      
+      try {
+        const response = await fetch(apiBase);
+        if (response.ok) {
+          allWcOrders = await response.json();
+        }
+      } catch (err) {
+        console.warn("Could not fetch WC orders, showing local only.");
+      }
+    }
 
-    const response = await fetch(apiBase);
-    if (!response.ok) return [];
-    const allWcOrders = await response.json();
-
-    if (!Array.isArray(allWcOrders)) return [];
-
-    return allWcOrders.map((wc: any): Order => {
-      // Use String comparison for robustness
+    const mappedOrders: Order[] = (Array.isArray(allWcOrders) ? allWcOrders : []).map((wc: any): Order => {
       const tracking = localTracking.find(t => String(t.id) === String(wc.id));
       let mappedStatus: Order['status'] = 'Pending';
       
@@ -156,7 +157,50 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         courier_name: (detectedCourier as 'Steadfast' | 'Pathao') || undefined
       };
     });
+
+    // Add local tracking records that don't match any WC order (e.g. POS orders)
+    localTracking.forEach(tracking => {
+      const alreadyMapped = mappedOrders.some(o => String(o.id) === String(tracking.id));
+      if (!alreadyMapped) {
+        let mappedStatus: Order['status'] = 'Pending';
+        if (tracking.courier_status) {
+          const cs = tracking.courier_status.toLowerCase();
+          if (cs.includes('delivered')) mappedStatus = 'Delivered';
+          else if (cs.includes('cancelled')) mappedStatus = 'Cancelled';
+          else if (cs.includes('return')) mappedStatus = 'Returned';
+          else mappedStatus = 'Shipping';
+        }
+
+        mappedOrders.push({
+          id: String(tracking.id),
+          timestamp: Date.now(), // Fallback
+          customer: {
+            name: 'Local/POS Customer',
+            email: '',
+            phone: '',
+            avatar: `https://ui-avatars.com/api/?name=L&background=random`,
+            orderCount: 0
+          },
+          address: 'Local Entry',
+          date: new Date().toLocaleString(),
+          paymentMethod: 'Local',
+          products: [],
+          subtotal: 0,
+          shippingCharge: 0,
+          discount: 0,
+          total: 0,
+          status: mappedStatus,
+          statusHistory: { placed: new Date().toLocaleDateString() },
+          courier_tracking_code: tracking.courier_tracking_code,
+          courier_status: tracking.courier_status,
+          courier_name: tracking.courier_name || ( /^\d+$/.test(tracking.courier_tracking_code) ? 'Pathao' : 'Steadfast' )
+        });
+      }
+    });
+
+    return mappedOrders.sort((a, b) => b.timestamp - a.timestamp);
   } catch (error) {
+    console.error("Fetch orders failed", error);
     return [];
   }
 };
