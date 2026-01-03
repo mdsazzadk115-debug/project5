@@ -11,6 +11,7 @@ import { ProductListView } from './components/ProductListView';
 import { BulkSMSView } from './components/BulkSMSView';
 import { CourierDashboardView } from './components/CourierDashboardView';
 import { ExpenseListView } from './components/ExpenseListView';
+import { POSView } from './components/POSView';
 import { 
   Briefcase, 
   DollarSign, 
@@ -29,8 +30,9 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
-import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig } from './services/wordpressService';
-import { syncOrderStatusWithCourier } from './services/courierService';
+import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory } from './services/wordpressService';
+import { syncOrderStatusWithCourier, createSteadfastOrder, saveTrackingLocally } from './services/courierService';
+import { createPathaoOrder, getPathaoCities, getPathaoZones, getPathaoAreas } from './services/pathaoService';
 import { getExpenses, saveExpenses } from './services/expenseService';
 import { DashboardStats, Order, InventoryProduct, Customer, Expense } from './types';
 
@@ -173,6 +175,7 @@ const App: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [categories, setCategories] = useState<WPCategory[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [hasConfig, setHasConfig] = useState(true);
@@ -212,10 +215,11 @@ const App: React.FC = () => {
     setHasConfig(true);
     setLoadingData(true);
     try {
-      const [wpOrders, wpProducts, dbExpenses] = await Promise.all([
+      const [wpOrders, wpProducts, dbExpenses, wpCats] = await Promise.all([
         fetchOrdersFromWP(),
         fetchProductsFromWP(),
-        getExpenses()
+        getExpenses(),
+        fetchCategoriesFromWP()
       ]);
       
       const enrichedOrders = wpOrders.map(order => ({
@@ -230,6 +234,7 @@ const App: React.FC = () => {
       setOrders(syncedOrders);
       setProducts(wpProducts);
       setExpenses(dbExpenses);
+      setCategories(wpCats);
       
       const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
       const totalExpensesValue = dbExpenses.reduce((acc, e) => acc + e.amount, 0);
@@ -272,6 +277,42 @@ const App: React.FC = () => {
     setExpenses(updated);
     await saveExpenses(updated);
     loadAllData(); // Refresh stats
+  };
+
+  const handlePlacePOSOrder = async (orderData: Omit<Order, 'id' | 'timestamp' | 'date' | 'statusHistory'>): Promise<Order | null> => {
+    const newOrder: Order = {
+      ...orderData,
+      id: `POS-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+      timestamp: Date.now(),
+      date: new Date().toLocaleString(),
+      statusHistory: { placed: new Date().toLocaleDateString() }
+    };
+    
+    setOrders(prev => [newOrder, ...prev]);
+    // In a real app, this should await database confirmation
+    return newOrder;
+  };
+
+  const handleSendToCourierDirectly = async (order: Order, courier: 'Steadfast' | 'Pathao') => {
+    if (courier === 'Steadfast') {
+      const res = await createSteadfastOrder(order);
+      if (res.status === 200) {
+        setOrders(prev => prev.map(o => o.id === order.id ? { 
+          ...o, 
+          courier_tracking_code: res.consignment.tracking_code,
+          courier_name: 'Steadfast',
+          courier_status: res.consignment.status,
+          status: 'Shipping'
+        } : o));
+      }
+      return res;
+    } else {
+      // For Pathao, we need more specific location data which usually comes from a modal.
+      // For POS direct send, we might use default merchant locations or require a quick area selector.
+      // This is a simplified version; in production you'd pop the Pathao location modal here.
+      alert("Pathao requires location selection. Please send via Order Detail view.");
+      throw new Error("Pathao requires detailed area selection.");
+    }
   };
 
   const statusCounts = useMemo(() => {
@@ -352,6 +393,16 @@ const App: React.FC = () => {
         return <CourierDashboardView orders={orders} onRefresh={loadAllData} />;
       case 'expenses':
         return <ExpenseListView expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />;
+      case 'pos':
+        return (
+          <POSView 
+            products={products} 
+            customers={customers} 
+            categories={categories} 
+            onPlaceOrder={handlePlacePOSOrder}
+            onSendToCourier={handleSendToCourierDirectly}
+          />
+        );
       case 'orders':
         return (
           <OrderDashboardView 
