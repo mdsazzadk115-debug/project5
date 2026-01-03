@@ -6,6 +6,15 @@ const PROXY_URL = "api/courier.php";
 const TRACKING_URL = "api/local_tracking.php";
 const SETTINGS_URL = "api/settings.php";
 
+/**
+ * Smartly identifies the courier based on the tracking code pattern.
+ */
+export const identifyCourierByTrackingCode = (trackingCode: string): 'Steadfast' | 'Pathao' => {
+  if (!trackingCode) return 'Steadfast';
+  const isNumeric = /^\d+$/.test(trackingCode);
+  return isNumeric ? 'Pathao' : 'Steadfast';
+};
+
 const fetchSetting = async (key: string) => {
   try {
     const res = await fetch(`${SETTINGS_URL}?key=${key}`);
@@ -16,11 +25,9 @@ const fetchSetting = async (key: string) => {
       const data = JSON.parse(text);
       return typeof data === 'string' ? JSON.parse(data) : data;
     } catch (e) {
-      console.error(`Error parsing setting for key ${key}:`, e);
       return null;
     }
   } catch (e) {
-    console.error(`Error fetching setting for key ${key}:`, e);
     return null;
   }
 };
@@ -33,7 +40,7 @@ const saveSetting = async (key: string, value: any) => {
       body: JSON.stringify({ key, value: JSON.stringify(value) })
     });
   } catch (e) {
-    console.error("Error saving courier setting:", e);
+    console.error("Error saving setting:", e);
   }
 };
 
@@ -56,20 +63,24 @@ export const fetchAllLocalTracking = async (): Promise<any[]> => {
   }
 };
 
-export const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string, courier: 'Steadfast' | 'Pathao' = 'Steadfast') => {
+export const saveTrackingLocally = async (orderId: string, trackingCode: string, status: string, courier?: 'Steadfast' | 'Pathao') => {
+  const detectedCourier = courier || identifyCourierByTrackingCode(trackingCode);
+  
   try {
-    await fetch(TRACKING_URL, {
+    const response = await fetch(TRACKING_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         order_id: orderId,
         tracking_code: trackingCode,
         status: status,
-        courier_name: courier 
+        courier_name: detectedCourier 
       })
     });
+    return await response.json();
   } catch (e) {
     console.error("Local tracking update failed:", e);
+    return { status: "error" };
   }
 };
 
@@ -108,7 +119,6 @@ export const createSteadfastOrder = async (order: Order) => {
 
     return result;
   } catch (error) {
-    console.error("Steadfast Order Creation Error:", error);
     throw error;
   }
 };
@@ -140,10 +150,12 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
     const order = updatedOrders[i];
     const trackingInfo = localTracking.find(t => t.id === order.id);
     
-    if (trackingInfo && !order.courier_name) {
+    if (trackingInfo) {
+      const courier = trackingInfo.courier_name || identifyCourierByTrackingCode(trackingInfo.courier_tracking_code);
+      
       updatedOrders[i] = {
         ...updatedOrders[i],
-        courier_name: trackingInfo.courier_name,
+        courier_name: courier as 'Steadfast' | 'Pathao',
         courier_tracking_code: trackingInfo.courier_tracking_code,
         courier_status: trackingInfo.courier_status
       };
@@ -156,17 +168,16 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
   );
 
   for (let order of activeOrders) {
-    const courier = order.courier_name || 'Steadfast';
+    const courier = order.courier_name || identifyCourierByTrackingCode(order.courier_tracking_code!);
     let courierStatus = '';
-    let rawStatusData: any = null;
 
     if (courier === 'Pathao') {
-      rawStatusData = await getPathaoOrderStatus(order.courier_tracking_code!);
+      const rawStatusData = await getPathaoOrderStatus(order.courier_tracking_code!);
       if (rawStatusData?.data?.order_status) {
         courierStatus = rawStatusData.data.order_status;
       }
     } else {
-      rawStatusData = await getDeliveryStatus(order.courier_tracking_code!);
+      const rawStatusData = await getDeliveryStatus(order.courier_tracking_code!);
       if (rawStatusData?.status === 200 && rawStatusData.delivery_status) {
         courierStatus = rawStatusData.delivery_status;
       }
@@ -192,69 +203,6 @@ export const syncOrderStatusWithCourier = async (orders: Order[]) => {
         };
         await saveTrackingLocally(order.id, order.courier_tracking_code!, courierStatus, courier);
       }
-    }
-  }
-
-  const wpOrderIds = new Set(orders.map(o => o.id));
-  const externalTracking = localTracking.filter(t => !wpOrderIds.has(t.id));
-
-  for (const ext of externalTracking) {
-    const courier = ext.courier_name || 'Steadfast';
-    let virtualOrder: Order | null = null;
-
-    if (courier === 'Pathao') {
-      const statusData = await getPathaoOrderStatus(ext.courier_tracking_code);
-      if (statusData?.data) {
-        const d = statusData.data;
-        virtualOrder = {
-          id: ext.id,
-          timestamp: Date.now(),
-          customer: { name: d.recipient_name || 'Pathao Customer', email: '', phone: d.recipient_phone || 'N/A', avatar: `https://ui-avatars.com/api/?name=Pathao&background=random`, orderCount: 1 },
-          address: d.recipient_address || 'N/A',
-          date: new Date().toLocaleString(),
-          paymentMethod: 'COD (Pathao)',
-          products: [],
-          subtotal: parseFloat(d.amount_to_collect || '0'),
-          shippingCharge: 0,
-          discount: 0,
-          total: parseFloat(d.amount_to_collect || '0'),
-          status: 'Shipping',
-          statusHistory: { placed: 'Pathao Sync' },
-          courier_tracking_code: ext.courier_tracking_code,
-          courier_status: d.order_status,
-          courier_name: 'Pathao'
-        };
-      }
-    } else {
-      const statusData = await getDeliveryStatus(ext.courier_tracking_code);
-      if (statusData && statusData.status === 200) {
-        virtualOrder = {
-          id: ext.id,
-          timestamp: Date.now(),
-          customer: { name: statusData.recipient_name || 'External Customer', email: '', phone: statusData.recipient_phone || 'N/A', avatar: `https://ui-avatars.com/api/?name=Ext&background=random`, orderCount: 1 },
-          address: statusData.recipient_address || 'Manual Entry',
-          date: new Date().toLocaleString(),
-          paymentMethod: 'COD (External)',
-          products: [],
-          subtotal: parseFloat(statusData.cod_amount || '0'),
-          shippingCharge: 0,
-          discount: 0,
-          total: parseFloat(statusData.cod_amount || '0'),
-          status: 'Shipping',
-          statusHistory: { placed: 'Manual Sync' },
-          courier_tracking_code: ext.courier_tracking_code,
-          courier_status: statusData.delivery_status,
-          courier_name: 'Steadfast'
-        };
-      }
-    }
-
-    if (virtualOrder) {
-      const cs = (virtualOrder.courier_status || '').toLowerCase();
-      if (cs.includes('delivered')) virtualOrder.status = 'Delivered';
-      else if (cs.includes('cancelled')) virtualOrder.status = 'Cancelled';
-      else if (cs.includes('return')) virtualOrder.status = 'Returned';
-      updatedOrders.push(virtualOrder);
     }
   }
 

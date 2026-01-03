@@ -66,7 +66,6 @@ const fetchLocalTrackingData = async (): Promise<any[]> => {
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    console.error("Error fetching local tracking data:", e);
     return [];
   }
 };
@@ -96,20 +95,11 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
       
       if (tracking && tracking.courier_status) {
         const cs = tracking.courier_status.toLowerCase();
-        
-        if (cs.includes('delivered')) {
-          mappedStatus = 'Delivered';
-        } else if (cs.includes('cancelled')) {
-          mappedStatus = 'Cancelled';
-        } else if (cs.includes('return')) {
-          mappedStatus = 'Returned';
-        } else if (cs === 'pending' || cs === 'hold' || cs === 'in_review') {
-          mappedStatus = 'Packaging';
-        } else if (cs !== 'unknown') {
-          mappedStatus = 'Shipping';
-        } else {
-          mappedStatus = 'Pending';
-        }
+        if (cs.includes('delivered')) mappedStatus = 'Delivered';
+        else if (cs.includes('cancelled')) mappedStatus = 'Cancelled';
+        else if (cs.includes('return')) mappedStatus = 'Returned';
+        else if (cs === 'pending' || cs === 'hold' || cs === 'packaging') mappedStatus = 'Packaging';
+        else if (cs !== 'unknown') mappedStatus = 'Shipping';
       } else {
         switch (wc.status) {
           case 'processing': mappedStatus = 'Packaging'; break;
@@ -120,6 +110,12 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
           case 'failed': mappedStatus = 'Rejected'; break;
           default: mappedStatus = 'Pending';
         }
+      }
+
+      let detectedCourier = tracking?.courier_name;
+      if (!detectedCourier && tracking?.courier_tracking_code) {
+        const isNumeric = /^\d+$/.test(tracking.courier_tracking_code);
+        detectedCourier = isNumeric ? 'Pathao' : 'Steadfast';
       }
 
       return {
@@ -151,7 +147,7 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
         statusHistory: { placed: new Date(wc.date_created).toLocaleDateString() },
         courier_tracking_code: tracking?.courier_tracking_code || undefined,
         courier_status: tracking?.courier_status || undefined,
-        courier_name: (tracking?.courier_name as 'Steadfast' | 'Pathao') || undefined
+        courier_name: (detectedCourier as 'Steadfast' | 'Pathao') || undefined
       };
     });
   } catch (error) {
@@ -204,3 +200,4 @@ export const fetchCategoriesFromWP = async (): Promise<WPCategory[]> => {
     return [];
   }
 };
+    

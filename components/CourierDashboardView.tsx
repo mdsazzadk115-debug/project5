@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Wallet, 
@@ -26,7 +27,8 @@ import {
   getCourierBalance, 
   getCourierConfig, 
   saveTrackingLocally, 
-  getDeliveryStatus
+  getDeliveryStatus,
+  identifyCourierByTrackingCode
 } from '../services/courierService';
 import { getPathaoConfig, checkPathaoConnection } from '../services/pathaoService';
 import { Order } from '../types';
@@ -86,7 +88,12 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
   }, [activeCourier]);
 
   const stats = useMemo(() => {
-    const courierOrders = orders.filter(o => o.courier_name === activeCourier);
+    const courierOrders = orders.filter(o => {
+      if (o.courier_name) return o.courier_name === activeCourier;
+      if (o.courier_tracking_code) return identifyCourierByTrackingCode(o.courier_tracking_code) === activeCourier;
+      return false;
+    });
+    
     const activeShipments = courierOrders.filter(o => 
       o.courier_tracking_code && !['Delivered', 'Cancelled', 'Returned'].includes(o.status)
     ).length;
@@ -94,7 +101,16 @@ export const CourierDashboardView: React.FC<{ orders: Order[]; onRefresh?: () =>
   }, [orders, activeCourier]);
 
   const recentConsignments = useMemo(() => {
-    let filtered = orders.filter(o => o.courier_tracking_code && (o.courier_name === activeCourier || (!o.courier_name && activeCourier === 'Steadfast')));
+    let filtered = orders.filter(o => {
+      if (!o.courier_tracking_code) return false;
+      
+      // 1. If courier_name exists, strictly filter by it
+      if (o.courier_name) return o.courier_name === activeCourier;
+      
+      // 2. If courier_name is missing, use smart detection as fallback
+      const detected = identifyCourierByTrackingCode(o.courier_tracking_code);
+      return detected === activeCourier;
+    });
     
     if (searchTerm) {
       filtered = filtered.filter(o => 
