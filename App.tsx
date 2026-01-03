@@ -30,7 +30,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
-import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory } from './services/wordpressService';
+import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory, savePOSOrderLocally } from './services/wordpressService';
 import { syncOrderStatusWithCourier, createSteadfastOrder, saveTrackingLocally } from './services/courierService';
 import { createPathaoOrder, getPathaoCities, getPathaoZones, getPathaoAreas } from './services/pathaoService';
 import { getExpenses, saveExpenses } from './services/expenseService';
@@ -299,8 +299,13 @@ const App: React.FC = () => {
       statusHistory: { placed: new Date().toLocaleDateString() }
     };
     
-    setOrders(prev => [newOrder, ...prev]);
-    return newOrder;
+    const success = await savePOSOrderLocally(newOrder);
+    if (success) {
+      setOrders(prev => [newOrder, ...prev]);
+      return newOrder;
+    } else {
+      throw new Error("Failed to save order to database.");
+    }
   };
 
   const handleAddManualCustomer = (customer: Customer) => {

@@ -16,6 +16,7 @@ export interface WPCategory {
 
 const SETTINGS_URL = "api/settings.php";
 const TRACKING_URL = "api/local_tracking.php";
+const POS_ORDERS_URL = "api/pos_orders.php";
 
 const fetchSetting = async (key: string) => {
   try {
@@ -75,10 +76,37 @@ const fetchLocalTrackingData = async (): Promise<any[]> => {
   }
 };
 
+export const savePOSOrderLocally = async (order: Order): Promise<boolean> => {
+  try {
+    const response = await fetch(POS_ORDERS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order)
+    });
+    return response.ok;
+  } catch (e) {
+    console.error("Error saving POS order to DB:", e);
+    return false;
+  }
+};
+
+const fetchPOSOrdersLocally = async (): Promise<Order[]> => {
+  try {
+    const res = await fetch(POS_ORDERS_URL);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Error fetching POS orders:", e);
+    return [];
+  }
+};
+
 export const fetchOrdersFromWP = async (): Promise<Order[]> => {
   try {
     const config = await getWPConfig();
     const localTracking = await fetchLocalTrackingData();
+    const posOrders = await fetchPOSOrdersLocally();
     
     let allWcOrders: any[] = [];
     if (config && config.url && config.consumerKey) {
@@ -158,7 +186,22 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
       };
     });
 
-    // Add local tracking records that don't match any WC order (e.g. POS orders)
+    // Merge POS orders from database
+    posOrders.forEach(pos => {
+      const alreadyMapped = mappedOrders.some(o => String(o.id) === String(pos.id));
+      if (!alreadyMapped) {
+        // Also check if this POS order has tracking info
+        const tracking = localTracking.find(t => String(t.id) === String(pos.id));
+        if (tracking) {
+          pos.courier_tracking_code = tracking.courier_tracking_code;
+          pos.courier_status = tracking.courier_status;
+          pos.courier_name = tracking.courier_name;
+        }
+        mappedOrders.push(pos);
+      }
+    });
+
+    // Add local tracking records for legacy/unknown IDs that are not in WC or POS DB
     localTracking.forEach(tracking => {
       const alreadyMapped = mappedOrders.some(o => String(o.id) === String(tracking.id));
       if (!alreadyMapped) {
@@ -173,7 +216,7 @@ export const fetchOrdersFromWP = async (): Promise<Order[]> => {
 
         mappedOrders.push({
           id: String(tracking.id),
-          timestamp: Date.now(), // Fallback
+          timestamp: Date.now(),
           customer: {
             name: 'Local/POS Customer',
             email: '',
