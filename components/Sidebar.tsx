@@ -244,7 +244,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
         <SidebarItem icon={<Tag size={18} />} label="Brand" />
         <SidebarItem icon={<Layers size={18} />} label="Category" />
         <SidebarItem icon={<Percent size={18} />} label="Promotion" hasSubmenu />
-        <SidebarItem icon={<Receipt size={18} />} label="Expense" hasSubmenu />
+        <SidebarItem 
+          icon={<Receipt size={18} />} 
+          label="Expense" 
+          active={activePage === 'expenses'} 
+          onClick={() => {
+            onNavigate('expenses');
+            setIsOrderOpen(false);
+            setIsProductsOpen(false);
+          }}
+        />
         <SidebarItem icon={<Users size={18} />} label="Customers" />
       </div>
     </aside>

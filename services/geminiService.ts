@@ -10,13 +10,12 @@ export const getBusinessInsights = async (stats: DashboardStats) => {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze these business stats:
-      Net Profit: ৳${stats.netProfit}
-      Gross Profit: ৳${stats.grossProfit}
+      Profit: ৳${stats.netProfit}
       Total Expenses: ৳${stats.totalExpenses}
       Total Orders: ${stats.orders}
       Total Customers: ${stats.customers}
       
-      Provide 3 short, actionable business insights to improve performance.`,
+      Provide 3 short, actionable business insights to improve performance based on these metrics.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {

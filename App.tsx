@@ -10,6 +10,7 @@ import { OrderDetailView } from './components/OrderDetailView';
 import { ProductListView } from './components/ProductListView';
 import { BulkSMSView } from './components/BulkSMSView';
 import { CourierDashboardView } from './components/CourierDashboardView';
+import { ExpenseListView } from './components/ExpenseListView';
 import { 
   Briefcase, 
   DollarSign, 
@@ -30,7 +31,8 @@ import {
 import { getBusinessInsights } from './services/geminiService';
 import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig } from './services/wordpressService';
 import { syncOrderStatusWithCourier } from './services/courierService';
-import { DashboardStats, Order, InventoryProduct, Customer } from './types';
+import { getExpenses, saveExpenses } from './services/expenseService';
+import { DashboardStats, Order, InventoryProduct, Customer, Expense } from './types';
 
 const DashboardContent: React.FC<{ 
   stats: DashboardStats; 
@@ -53,11 +55,10 @@ const DashboardContent: React.FC<{
     )}
 
     <div className="flex justify-between items-center">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-        <StatCard title="Net Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
-        <StatCard title="Gross Profit" value={stats.grossProfit.toLocaleString()} change={100} icon={<Briefcase size={20} />} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+        <StatCard title="Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
         <StatCard title="Total Expenses" value={stats.totalExpenses.toLocaleString()} change={0} icon={<CreditCard size={20} />} />
-        <StatCard title="Total POS Sale" value={stats.totalPosSale.toLocaleString()} change={100} icon={<Receipt size={20} />} />
+        <StatCard title="Total Sale" value={stats.totalPosSale.toLocaleString()} change={100} icon={<Receipt size={20} />} />
       </div>
     </div>
 
@@ -172,6 +173,7 @@ const App: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [hasConfig, setHasConfig] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -210,9 +212,10 @@ const App: React.FC = () => {
     setHasConfig(true);
     setLoadingData(true);
     try {
-      const [wpOrders, wpProducts] = await Promise.all([
+      const [wpOrders, wpProducts, dbExpenses] = await Promise.all([
         fetchOrdersFromWP(),
-        fetchProductsFromWP()
+        fetchProductsFromWP(),
+        getExpenses()
       ]);
       
       const enrichedOrders = wpOrders.map(order => ({
@@ -226,13 +229,16 @@ const App: React.FC = () => {
       const syncedOrders = await syncOrderStatusWithCourier(enrichedOrders);
       setOrders(syncedOrders);
       setProducts(wpProducts);
+      setExpenses(dbExpenses);
       
       const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
+      const totalExpensesValue = dbExpenses.reduce((acc, e) => acc + e.amount, 0);
+      
       setStats({
         totalPosSale: totalSales,
-        netProfit: totalSales * 0.4,
+        totalExpenses: totalExpensesValue,
+        netProfit: totalSales - totalExpensesValue,
         grossProfit: totalSales * 0.45,
-        totalExpenses: syncedOrders.length * 5,
         onlineSold: totalSales * 0.2,
         orders: syncedOrders.length,
         customers: new Set(syncedOrders.map(o => o.customer.email)).size,
@@ -248,6 +254,25 @@ const App: React.FC = () => {
   useEffect(() => {
     loadAllData();
   }, []);
+
+  const handleAddExpense = async (data: Omit<Expense, 'id' | 'timestamp'>) => {
+    const newExpense: Expense = {
+      ...data,
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now()
+    };
+    const updated = [...expenses, newExpense];
+    setExpenses(updated);
+    await saveExpenses(updated);
+    loadAllData(); // Refresh stats
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    const updated = expenses.filter(e => e.id !== id);
+    setExpenses(updated);
+    await saveExpenses(updated);
+    loadAllData(); // Refresh stats
+  };
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -325,6 +350,8 @@ const App: React.FC = () => {
         return <BulkSMSView customers={customers} orders={orders} products={products} />;
       case 'courier':
         return <CourierDashboardView orders={orders} onRefresh={loadAllData} />;
+      case 'expenses':
+        return <ExpenseListView expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />;
       case 'orders':
         return (
           <OrderDashboardView 

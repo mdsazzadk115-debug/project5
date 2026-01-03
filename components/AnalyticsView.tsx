@@ -87,9 +87,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ orders, stats }) =
 
   const analyticsData = useMemo(() => {
     const totalPosSale = filteredOrders.reduce((acc, o) => acc + o.total, 0);
-    const netProfit = totalPosSale * 0.4;
-    const grossProfit = totalPosSale * 0.45;
     const expenses = filteredOrders.length * 5;
+    const netProfit = totalPosSale - expenses; // New Logic: Profit = Total Sale - Expenses
+    const grossProfit = totalPosSale * 0.45;
 
     // Grouping by Day of Week for chart
     const dayMap: Record<string, number> = {
@@ -126,25 +126,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ orders, stats }) =
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'Select Date';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Top Stat Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
-          title="Net Profit" 
+          title="Profit" 
           value={analyticsData.netProfit.toLocaleString()} 
           change={100} 
           icon={<DollarSign size={20} />} 
-        />
-        <StatCard 
-          title="Gross Profit" 
-          value={analyticsData.grossProfit.toLocaleString()} 
-          change={100} 
-          icon={<Briefcase size={20} />} 
         />
         <StatCard 
           title="Total Expenses" 
@@ -153,7 +147,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ orders, stats }) =
           icon={<CreditCard size={20} />} 
         />
         <StatCard 
-          title="Total POS Sale" 
+          title="Total Sale" 
           value={analyticsData.posSale.toLocaleString()} 
           change={100} 
           icon={<Receipt size={20} />} 

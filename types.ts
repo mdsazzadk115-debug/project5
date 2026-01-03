@@ -55,6 +55,15 @@ export interface Order {
   courier_name?: 'Steadfast' | 'Pathao';
 }
 
+export interface Expense {
+  id: string;
+  category: string;
+  amount: number;
+  date: string;
+  description: string;
+  timestamp: number;
+}
+
 export interface DashboardStats {
   netProfit: number;
   grossProfit: number;
