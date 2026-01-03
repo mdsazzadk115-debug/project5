@@ -320,7 +320,7 @@ const App: React.FC = () => {
           />
         );
       case 'analytics':
-        return <AnalyticsView />;
+        return <AnalyticsView orders={orders} stats={stats} />;
       case 'bulk-sms':
         return <BulkSMSView customers={customers} orders={orders} products={products} />;
       case 'courier':

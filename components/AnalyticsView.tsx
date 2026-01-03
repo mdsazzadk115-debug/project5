@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StatCard } from './StatCard';
 import { SellingStatistics } from './Charts';
 import { 
@@ -13,6 +13,7 @@ import {
   XCircle,
   RotateCcw
 } from 'lucide-react';
+import { Order, DashboardStats } from '../types';
 
 const StatusTrackingCard: React.FC<{ 
   label: string; 
@@ -60,100 +61,100 @@ const StatusTrackingCard: React.FC<{
   </div>
 );
 
-export const AnalyticsView: React.FC = () => {
+interface AnalyticsViewProps {
+  orders: Order[];
+  stats: DashboardStats;
+}
+
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ orders, stats }) => {
+  // Use last 7 days as default range if possible, or current day
+  const today = new Date().toISOString().split('T')[0];
+  const lastWeek = new Date();
+  lastWeek.setDate(lastWeek.getDate() - 7);
+  const lastWeekStr = lastWeek.toISOString().split('T')[0];
+
   const [dateRange, setDateRange] = useState({
-    start: '2025-12-23',
-    end: '2025-12-23'
+    start: lastWeekStr,
+    end: today
   });
 
-  const [dynamicData, setDynamicData] = useState({
-    netProfit: 162808,
-    grossProfit: 163308,
-    expenses: 500,
-    posSale: 156808,
-    chartData: [
-      { name: 'Mon', value: 2400 },
-      { name: 'Tue', value: 1398 },
-      { name: 'Wed', value: 9800 },
-      { name: 'Thu', value: 3908 },
-      { name: 'Fri', value: 4800 },
-      { name: 'Sat', value: 3800 },
-      { name: 'Sun', value: 4300 },
-    ],
-    statusCounts: {
-      delivered: 65,
-      shipping: 15,
-      cancelled: 5,
-      returned: 15
-    }
-  });
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const orderDate = new Date(o.timestamp).toISOString().split('T')[0];
+      return orderDate >= dateRange.start && orderDate <= dateRange.end;
+    });
+  }, [orders, dateRange]);
 
-  const [loading, setLoading] = useState(false);
+  const analyticsData = useMemo(() => {
+    const totalPosSale = filteredOrders.reduce((acc, o) => acc + o.total, 0);
+    const netProfit = totalPosSale * 0.4;
+    const grossProfit = totalPosSale * 0.45;
+    const expenses = filteredOrders.length * 5;
 
-  // Function to simulate fetching/generating dynamic data
-  useEffect(() => {
-    setLoading(true);
-    // Simulate a small delay for "loading" effect
-    const timer = setTimeout(() => {
-      const randomMultiplier = Math.random() * 0.5 + 0.75; // 0.75 to 1.25
-      
-      setDynamicData({
-        netProfit: Math.floor(162808 * randomMultiplier),
-        grossProfit: Math.floor(163308 * randomMultiplier),
-        expenses: Math.floor(500 * (Math.random() * 2)),
-        posSale: Math.floor(156808 * randomMultiplier),
-        chartData: [
-          { name: 'Mon', value: Math.floor(Math.random() * 5000 + 1000) },
-          { name: 'Tue', value: Math.floor(Math.random() * 5000 + 1000) },
-          { name: 'Wed', value: Math.floor(Math.random() * 10000 + 2000) },
-          { name: 'Thu', value: Math.floor(Math.random() * 5000 + 1000) },
-          { name: 'Fri', value: Math.floor(Math.random() * 6000 + 1000) },
-          { name: 'Sat', value: Math.floor(Math.random() * 4000 + 1000) },
-          { name: 'Sun', value: Math.floor(Math.random() * 5000 + 1000) },
-        ],
-        statusCounts: {
-          delivered: Math.floor(Math.random() * 40 + 50),
-          shipping: Math.floor(Math.random() * 20 + 10),
-          cancelled: Math.floor(Math.random() * 10),
-          returned: Math.floor(Math.random() * 15)
-        }
-      });
-      setLoading(false);
-    }, 300);
+    // Grouping by Day of Week for chart
+    const dayMap: Record<string, number> = {
+      'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
+    };
+    
+    filteredOrders.forEach(o => {
+      const dayName = new Date(o.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+      if (dayMap[dayName] !== undefined) {
+        dayMap[dayName] += o.total;
+      }
+    });
 
-    return () => clearTimeout(timer);
-  }, [dateRange]);
+    const chartData = Object.entries(dayMap).map(([name, value]) => ({ name, value }));
+
+    // Status Percentages
+    const totalCount = filteredOrders.length || 1;
+    const getStatusCount = (s: Order['status']) => filteredOrders.filter(o => o.status === s).length;
+    
+    return {
+      netProfit,
+      grossProfit,
+      expenses,
+      posSale: totalPosSale,
+      chartData,
+      statusPercentages: {
+        delivered: Math.round((getStatusCount('Delivered') / totalCount) * 100),
+        shipping: Math.round((getStatusCount('Shipping') / totalCount) * 100),
+        cancelled: Math.round((getStatusCount('Cancelled') / totalCount) * 100),
+        returned: Math.round((getStatusCount('Returned') / totalCount) * 100)
+      }
+    };
+  }, [filteredOrders]);
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return 'Select Date';
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   return (
-    <div className={`space-y-6 transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}>
+    <div className="space-y-6 animate-in fade-in duration-500">
       {/* Top Stat Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Net Profit" 
-          value={dynamicData.netProfit.toLocaleString()} 
+          value={analyticsData.netProfit.toLocaleString()} 
           change={100} 
           icon={<DollarSign size={20} />} 
         />
         <StatCard 
           title="Gross Profit" 
-          value={dynamicData.grossProfit.toLocaleString()} 
+          value={analyticsData.grossProfit.toLocaleString()} 
           change={100} 
           icon={<Briefcase size={20} />} 
         />
         <StatCard 
           title="Total Expenses" 
-          value={dynamicData.expenses.toLocaleString()} 
+          value={analyticsData.expenses.toLocaleString()} 
           change={0} 
           icon={<CreditCard size={20} />} 
         />
         <StatCard 
           title="Total POS Sale" 
-          value={dynamicData.posSale.toLocaleString()} 
+          value={analyticsData.posSale.toLocaleString()} 
           change={100} 
           icon={<Receipt size={20} />} 
         />
@@ -190,7 +191,7 @@ export const AnalyticsView: React.FC = () => {
           </div>
           
           <div className="flex-1 h-[400px]">
-            <SellingStatistics data={dynamicData.chartData} />
+            <SellingStatistics data={analyticsData.chartData} />
           </div>
 
           {/* Chart Legend */}
@@ -221,32 +222,32 @@ export const AnalyticsView: React.FC = () => {
         <div className="lg:col-span-4 flex flex-col gap-4">
           <StatusTrackingCard 
             label="Delivered" 
-            percentage="0.00%" 
-            count={dynamicData.statusCounts.delivered}
+            percentage={`${analyticsData.statusPercentages.delivered}% of orders`} 
+            count={analyticsData.statusPercentages.delivered}
             icon={<Package size={20} />} 
             iconBg="bg-green-50" 
             iconColor="text-green-600" 
           />
           <StatusTrackingCard 
             label="Shipping" 
-            percentage="0.00%" 
-            count={dynamicData.statusCounts.shipping}
+            percentage={`${analyticsData.statusPercentages.shipping}% of orders`} 
+            count={analyticsData.statusPercentages.shipping}
             icon={<Truck size={20} />} 
             iconBg="bg-blue-50" 
             iconColor="text-blue-500" 
           />
           <StatusTrackingCard 
             label="Cancelled" 
-            percentage="0.00%" 
-            count={dynamicData.statusCounts.cancelled}
+            percentage={`${analyticsData.statusPercentages.cancelled}% of orders`} 
+            count={analyticsData.statusPercentages.cancelled}
             icon={<XCircle size={20} />} 
             iconBg="bg-red-50" 
             iconColor="text-red-500" 
           />
           <StatusTrackingCard 
             label="Returned" 
-            percentage="0.00%" 
-            count={dynamicData.statusCounts.returned}
+            percentage={`${analyticsData.statusPercentages.returned}% of orders`} 
+            count={analyticsData.statusPercentages.returned}
             icon={<RotateCcw size={20} />} 
             iconBg="bg-orange-50" 
             iconColor="text-orange-500" 
