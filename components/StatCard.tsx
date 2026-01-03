@@ -10,7 +10,13 @@ interface StatCardProps {
   isCurrency?: boolean;
 }
 
-export const StatCard: React.FC<StatCardProps> = ({ title, value, change, icon }) => {
+export const StatCard: React.FC<StatCardProps> = ({ 
+  title, 
+  value, 
+  change, 
+  icon, 
+  isCurrency = true 
+}) => {
   const isPositive = change >= 0;
   
   return (
@@ -18,7 +24,10 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, change, icon }
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="text-gray-400 text-[11px] font-bold uppercase tracking-wider mb-2">{title}</h3>
-          <p className="text-2xl font-bold text-gray-800">৳{value}</p>
+          <p className="text-2xl font-bold text-gray-800">
+            {isCurrency && <span className="mr-0.5">৳</span>}
+            {value}
+          </p>
         </div>
         <div className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
           isPositive ? 'text-green-500' : 'text-red-500'

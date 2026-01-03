@@ -63,9 +63,9 @@ const DashboardContent: React.FC<{
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard title="Online Sold" value={stats.onlineSold.toLocaleString()} change={0} icon={<ShoppingCart size={20} />} />
-      <StatCard title="Orders" value={statusCounts['All'].toString()} change={0} icon={<Truck size={20} />} />
-      <StatCard title="Customers" value={stats.customers.toString()} change={0} icon={<Users size={20} />} />
-      <StatCard title="Total Products" value={stats.totalProducts.toString()} change={100} icon={<Package size={20} />} />
+      <StatCard title="Orders" value={statusCounts['All'].toString()} change={0} icon={<Truck size={20} />} isCurrency={false} />
+      <StatCard title="Customers" value={stats.customers.toString()} change={0} icon={<Users size={20} />} isCurrency={false} />
+      <StatCard title="Total Products" value={stats.totalProducts.toString()} change={100} icon={<Package size={20} />} isCurrency={false} />
     </div>
 
     {loadingData && (
