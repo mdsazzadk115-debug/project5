@@ -23,7 +23,7 @@ const fetchSetting = async (key: string) => {
     const res = await fetch(`${SETTINGS_URL}?key=${key}`);
     if (!res.ok) return null;
     const text = await res.text();
-    if (!text || text === "null") return null;
+    if (!text || text === "null" || text.trim() === "") return null;
     try {
       const data = JSON.parse(text);
       return typeof data === 'string' ? JSON.parse(data) : data;
@@ -65,13 +65,16 @@ const fetchLocalTrackingData = async (): Promise<any[]> => {
     const res = await fetch(TRACKING_URL);
     if (!res.ok) return [];
     const text = await res.text();
+    if (!text || text.trim() === "" || text === "null") return [];
     try {
       const data = JSON.parse(text);
       return Array.isArray(data) ? data : [];
     } catch (e) {
+      console.error("Error parsing tracking JSON:", e);
       return [];
     }
   } catch (e) {
+    console.error("Network error fetching local tracking:", e);
     return [];
   }
 };
@@ -100,8 +103,15 @@ const fetchPOSOrdersLocally = async (): Promise<Order[]> => {
   try {
     const res = await fetch(POS_ORDERS_URL);
     if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const text = await res.text();
+    if (!text || text.trim() === "" || text === "null") return [];
+    try {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.error("Error parsing POS orders JSON:", e);
+      return [];
+    }
   } catch (e) {
     console.error("Error fetching POS orders:", e);
     return [];

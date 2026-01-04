@@ -7,12 +7,20 @@ export const fetchCustomersFromDB = async (): Promise<Customer[]> => {
   try {
     const res = await fetch(CUSTOMERS_API);
     if (!res.ok) {
-      const err = await res.json();
-      console.error("Server Error:", err.error);
+      console.error(`HTTP Error: ${res.status}`);
       return [];
     }
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const text = await res.text();
+    if (!text || text.trim() === "" || text === "null") {
+      return [];
+    }
+    try {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : [];
+    } catch (parseError) {
+      console.error("Error parsing customer JSON:", parseError, "Response text:", text);
+      return [];
+    }
   } catch (e) {
     console.error("Network error fetching customers:", e);
     return [];
