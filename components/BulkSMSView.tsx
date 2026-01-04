@@ -38,6 +38,7 @@ interface BulkSMSViewProps {
   customers: Customer[];
   orders: Order[];
   products: InventoryProduct[];
+  initialTargetPhone?: string | null;
 }
 
 interface SendLog {
@@ -47,7 +48,7 @@ interface SendLog {
   time: string;
 }
 
-export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, products }) => {
+export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, products, initialTargetPhone }) => {
   const [activeTab, setActiveTab] = useState<'database' | 'manual'>('database');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedOrderCount, setSelectedOrderCount] = useState<string>('All');
@@ -77,7 +78,12 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       if (savedTemplates) setTemplates(savedTemplates);
     };
     loadData();
-  }, []);
+
+    // If navigated from customers page with a specific phone
+    if (initialTargetPhone) {
+      setSelectedPhones(new Set([initialTargetPhone]));
+    }
+  }, [initialTargetPhone]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -195,7 +201,6 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
 
     setIsSending(true);
     setSendLogs([]);
-    // Fixed: Explicitly type phones as string array to prevent 'unknown' issues from Array.from
     const phones = Array.from(selectedPhones) as string[];
     let successCount = 0;
 
@@ -204,13 +209,11 @@ export const BulkSMSView: React.FC<BulkSMSViewProps> = ({ customers, orders, pro
       const customerName = customer ? customer.name.split(' ')[0] : 'Customer';
       const personalizedMessage = message.replace(/\[name\]/g, customerName);
       
-      // Fixed: phone is now explicitly a string for sendActualSMS
       const res = await sendActualSMS(smsConfig, phone, personalizedMessage);
       
       const logEntry: SendLog = {
         phone,
         status: res.success ? 'sent' : 'failed',
-        // Fixed: Ensure message is a string for SendLog
         message: res.message || 'Unknown error occurred',
         time: new Date().toLocaleTimeString()
       };

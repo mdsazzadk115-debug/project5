@@ -12,6 +12,7 @@ import { BulkSMSView } from './components/BulkSMSView';
 import { CourierDashboardView } from './components/CourierDashboardView';
 import { ExpenseListView } from './components/ExpenseListView';
 import { POSView } from './components/POSView';
+import { CustomerListView } from './components/CustomerListView';
 import { 
   Briefcase, 
   DollarSign, 
@@ -34,6 +35,7 @@ import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFro
 import { syncOrderStatusWithCourier, createSteadfastOrder, saveTrackingLocally } from './services/courierService';
 import { createPathaoOrder, getPathaoCities, getPathaoZones, getPathaoAreas } from './services/pathaoService';
 import { getExpenses, saveExpenses } from './services/expenseService';
+import { fetchCustomersFromDB, syncCustomerWithDB } from './services/customerService';
 import { DashboardStats, Order, InventoryProduct, Customer, Expense } from './types';
 
 const DashboardContent: React.FC<{ 
@@ -177,7 +179,8 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [categories, setCategories] = useState<WPCategory[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [manualCustomers, setManualCustomers] = useState<Customer[]>([]);
+  const [dbCustomers, setDbCustomers] = useState<Customer[]>([]);
+  const [smsPhoneTarget, setSmsPhoneTarget] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [hasConfig, setHasConfig] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -194,28 +197,10 @@ const App: React.FC = () => {
   const [aiInsights, setAiInsights] = useState<string[]>([]);
   const [loadingInsights, setLoadingInsights] = useState(true);
 
+  // Use database customers directly
   const customers = useMemo(() => {
-    const customerMap = new Map<string, Customer>();
-    
-    // Process orders to get customers
-    orders.forEach(o => {
-      const existing = customerMap.get(o.customer.phone);
-      if (existing) {
-        existing.orderCount++;
-      } else {
-        customerMap.set(o.customer.phone, { ...o.customer, orderCount: 1 });
-      }
-    });
-
-    // Add manually created customers if they don't exist yet in the orders map
-    manualCustomers.forEach(mc => {
-      if (!customerMap.has(mc.phone)) {
-        customerMap.set(mc.phone, mc);
-      }
-    });
-
-    return Array.from(customerMap.values());
-  }, [orders, manualCustomers]);
+    return dbCustomers;
+  }, [dbCustomers]);
 
   const loadAllData = async () => {
     const config = await getWPConfig();
@@ -226,11 +211,12 @@ const App: React.FC = () => {
     setHasConfig(true);
     setLoadingData(true);
     try {
-      const [wpOrders, wpProducts, dbExpenses, wpCats] = await Promise.all([
+      const [wpOrders, wpProducts, dbExpenses, wpCats, customersList] = await Promise.all([
         fetchOrdersFromWP(),
         fetchProductsFromWP(),
         getExpenses(),
-        fetchCategoriesFromWP()
+        fetchCategoriesFromWP(),
+        fetchCustomersFromDB()
       ]);
       
       const enrichedOrders = wpOrders.map(order => ({
@@ -246,7 +232,20 @@ const App: React.FC = () => {
       setProducts(wpProducts);
       setExpenses(dbExpenses);
       setCategories(wpCats);
+      setDbCustomers(customersList);
       
+      // Auto-sync new customers from WP orders to DB if they don't exist
+      // We do this after setting the initial list to keep it fast
+      syncedOrders.forEach(o => {
+        if (o.customer.phone && o.customer.phone.length > 5) {
+           syncCustomerWithDB({
+             ...o.customer,
+             total: o.total,
+             address: o.address
+           });
+        }
+      });
+
       const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
       const totalExpensesValue = dbExpenses.reduce((acc, e) => acc + e.amount, 0);
       
@@ -257,7 +256,7 @@ const App: React.FC = () => {
         grossProfit: totalSales * 0.45,
         onlineSold: totalSales * 0.2,
         orders: syncedOrders.length,
-        customers: new Set(syncedOrders.map(o => o.customer.email)).size,
+        customers: customersList.length,
         totalProducts: wpProducts.length
       });
     } catch (err) {
@@ -299,22 +298,33 @@ const App: React.FC = () => {
       statusHistory: { placed: new Date().toLocaleDateString() }
     };
     
-    // Save to DB before updating UI
     const success = await savePOSOrderLocally(newOrder);
     if (success) {
+      // Sync customer to DB on POS order (PDO API handles count update)
+      await syncCustomerWithDB({
+        ...newOrder.customer,
+        total: newOrder.total,
+        address: newOrder.address
+      });
+      
       setOrders(prev => [newOrder, ...prev]);
+      
+      // Reload customers to reflect changes
+      const updatedCustomers = await fetchCustomersFromDB();
+      setDbCustomers(updatedCustomers);
+      
       return newOrder;
     } else {
       throw new Error("Failed to save POS order to database.");
     }
   };
 
-  const handleAddManualCustomer = (customer: Customer) => {
-    setManualCustomers(prev => {
-      // Avoid duplicate phones
-      if (prev.some(c => c.phone === customer.phone)) return prev;
-      return [customer, ...prev];
-    });
+  const handleAddManualCustomer = async (customer: Customer) => {
+    const res = await syncCustomerWithDB(customer);
+    if (res.success) {
+      const updatedCustomers = await fetchCustomersFromDB();
+      setDbCustomers(updatedCustomers);
+    }
   };
 
   const handleSendToCourierDirectly = async (order: Order, courier: 'Steadfast' | 'Pathao') => {
@@ -392,6 +402,11 @@ const App: React.FC = () => {
     );
   };
 
+  const handleCustomerSMSAction = (phone: string) => {
+    setSmsPhoneTarget(phone);
+    setActivePage('bulk-sms');
+  };
+
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
@@ -409,7 +424,7 @@ const App: React.FC = () => {
       case 'analytics':
         return <AnalyticsView orders={orders} stats={stats} />;
       case 'bulk-sms':
-        return <BulkSMSView customers={customers} orders={orders} products={products} />;
+        return <BulkSMSView customers={customers} orders={orders} products={products} initialTargetPhone={smsPhoneTarget} />;
       case 'courier':
         return <CourierDashboardView orders={orders} onRefresh={loadAllData} />;
       case 'expenses':
@@ -425,6 +440,8 @@ const App: React.FC = () => {
             onAddCustomer={handleAddManualCustomer}
           />
         );
+      case 'customers':
+        return <CustomerListView customers={customers} onNavigateToSMS={handleCustomerSMSAction} />;
       case 'orders':
         return (
           <OrderDashboardView 

@@ -177,16 +177,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
 
       <div className="px-4 pb-8">
         <p className="text-[10px] uppercase font-bold text-gray-400 mb-4 px-2 tracking-wider">All Page</p>
-        <SidebarItem 
-          icon={<Calculator size={18} />} 
-          label="POS" 
-          active={activePage === 'pos'}
-          onClick={() => {
-            onNavigate('pos');
-            setIsOrderOpen(false);
-            setIsProductsOpen(false);
-          }}
-        />
         
         <SidebarItem 
           icon={<Truck size={18} />} 
@@ -264,7 +254,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
             setIsProductsOpen(false);
           }}
         />
-        <SidebarItem icon={<Users size={18} />} label="Customers" />
+        <SidebarItem 
+          icon={<Users size={18} />} 
+          label="Customers" 
+          active={activePage === 'customers'}
+          onClick={() => {
+            onNavigate('customers');
+            setIsOrderOpen(false);
+            setIsProductsOpen(false);
+          }}
+        />
       </div>
     </aside>
   );
