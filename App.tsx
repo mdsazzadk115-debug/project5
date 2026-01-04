@@ -14,7 +14,6 @@ import { ExpenseListView } from './components/ExpenseListView';
 import { POSView } from './components/POSView';
 import { CustomerListView } from './components/CustomerListView';
 import { 
-  Briefcase, 
   DollarSign, 
   CreditCard, 
   Package, 
@@ -32,8 +31,7 @@ import {
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
 import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory, savePOSOrderLocally } from './services/wordpressService';
-import { syncOrderStatusWithCourier, createSteadfastOrder, saveTrackingLocally } from './services/courierService';
-import { createPathaoOrder, getPathaoCities, getPathaoZones, getPathaoAreas } from './services/pathaoService';
+import { syncOrderStatusWithCourier, createSteadfastOrder } from './services/courierService';
 import { getExpenses, saveExpenses } from './services/expenseService';
 import { fetchCustomersFromDB, syncCustomerWithDB } from './services/customerService';
 import { DashboardStats, Order, InventoryProduct, Customer, Expense } from './types';
@@ -53,7 +51,7 @@ const DashboardContent: React.FC<{
         <AlertTriangle size={24} className="shrink-0" />
         <div>
           <p className="text-sm font-bold uppercase tracking-tight">WordPress Connection Required</p>
-          <p className="text-xs opacity-80">Click the "Settings" (gear icon) in the Top Bar to enter your WordPress URL, Consumer Key, and Secret.</p>
+          <p className="text-xs opacity-80">Check connections in the top bar settings.</p>
         </div>
       </div>
     )}
@@ -76,7 +74,7 @@ const DashboardContent: React.FC<{
     {loadingData && (
       <div className="flex items-center justify-center gap-2 p-4 bg-orange-50 text-orange-600 rounded-xl border border-orange-100 animate-pulse">
         <Loader2 size={16} className="animate-spin" />
-        <span className="text-sm font-bold">Synchronizing with WordPress & Courier...</span>
+        <span className="text-sm font-bold">Synchronizing Database...</span>
       </div>
     )}
 
@@ -95,42 +93,12 @@ const DashboardContent: React.FC<{
       </div>
 
       <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-orange-500 text-white rounded-xl p-6 flex flex-col items-center justify-center text-center gap-4 hover:shadow-lg transition-all cursor-pointer">
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-            <Box size={24} />
+        {['Pending', 'Packaging', 'Shipping', 'Delivered'].map((st) => (
+          <div key={st} className="bg-white border border-gray-100 rounded-xl p-6 flex flex-col items-center justify-center text-center gap-2 hover:shadow-lg transition-all cursor-pointer">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{st}</p>
+            <p className="text-2xl font-black text-gray-800">{statusCounts[st] || 0}</p>
           </div>
-          <div>
-            <p className="text-xs opacity-80 font-medium mb-1">Pending</p>
-            <p className="text-2xl font-bold">{statusCounts['Pending'] || 0}</p>
-          </div>
-        </div>
-        <div className="bg-purple-500 text-white rounded-xl p-6 flex flex-col items-center justify-center text-center gap-4 hover:shadow-lg transition-all cursor-pointer">
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-            <ClipboardCheck size={24} />
-          </div>
-          <div>
-            <p className="text-xs opacity-80 font-medium mb-1">Packaging</p>
-            <p className="text-2xl font-bold">{statusCounts['Packaging'] || 0}</p>
-          </div>
-        </div>
-        <div className="bg-blue-500 text-white rounded-xl p-6 flex flex-col items-center justify-center text-center gap-4 hover:shadow-lg transition-all cursor-pointer">
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-            <Truck size={24} />
-          </div>
-          <div>
-            <p className="text-xs opacity-80 font-medium mb-1">On Shipping</p>
-            <p className="text-2xl font-bold">{statusCounts['Shipping'] || 0}</p>
-          </div>
-        </div>
-        <div className="bg-emerald-500 text-white rounded-xl p-6 flex flex-col items-center justify-center text-center gap-4 hover:shadow-lg transition-all cursor-pointer">
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-            <ClipboardCheck size={24} />
-          </div>
-          <div>
-            <p className="text-xs opacity-80 font-medium mb-1">Complete Order</p>
-            <p className="text-2xl font-bold">{statusCounts['Delivered'] || 0}</p>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
 
@@ -148,12 +116,11 @@ const DashboardContent: React.FC<{
           <div className="space-y-4 animate-pulse">
             <div className="h-4 bg-white/20 rounded w-full"></div>
             <div className="h-4 bg-white/20 rounded w-5/6"></div>
-            <div className="h-4 bg-white/20 rounded w-4/6"></div>
           </div>
         ) : (
           <ul className="space-y-4 relative z-10">
             {aiInsights.map((insight, idx) => (
-              <li key={idx} className="flex gap-3 text-sm leading-relaxed bg-white/10 p-3 rounded-lg border border-white/10 hover:bg-white/20 transition-colors">
+              <li key={idx} className="flex gap-3 text-sm leading-relaxed bg-white/10 p-3 rounded-lg border border-white/10">
                 <span className="shrink-0 w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">
                   {idx + 1}
                 </span>
@@ -197,18 +164,13 @@ const App: React.FC = () => {
   const [aiInsights, setAiInsights] = useState<string[]>([]);
   const [loadingInsights, setLoadingInsights] = useState(true);
 
-  // Use database customers directly
-  const customers = useMemo(() => {
-    return dbCustomers;
-  }, [dbCustomers]);
+  const customers = useMemo(() => dbCustomers, [dbCustomers]);
 
   const loadAllData = async () => {
     const config = await getWPConfig();
     if (!config || !config.url || !config.consumerKey) {
       setHasConfig(false);
-      return;
     }
-    setHasConfig(true);
     setLoadingData(true);
     try {
       const [wpOrders, wpProducts, dbExpenses, wpCats, customersList] = await Promise.all([
@@ -234,8 +196,7 @@ const App: React.FC = () => {
       setCategories(wpCats);
       setDbCustomers(customersList);
       
-      // Auto-sync new customers from WP orders to DB if they don't exist
-      // We do this after setting the initial list to keep it fast
+      // Auto-sync WP customers to DB
       syncedOrders.forEach(o => {
         if (o.customer.phone && o.customer.phone.length > 5) {
            syncCustomerWithDB({
@@ -279,14 +240,14 @@ const App: React.FC = () => {
     const updated = [...expenses, newExpense];
     setExpenses(updated);
     await saveExpenses(updated);
-    loadAllData(); // Refresh stats
+    loadAllData();
   };
 
   const handleDeleteExpense = async (id: string) => {
     const updated = expenses.filter(e => e.id !== id);
     setExpenses(updated);
     await saveExpenses(updated);
-    loadAllData(); // Refresh stats
+    loadAllData();
   };
 
   const handlePlacePOSOrder = async (orderData: Omit<Order, 'id' | 'timestamp' | 'date' | 'statusHistory'>): Promise<Order | null> => {
@@ -300,67 +261,29 @@ const App: React.FC = () => {
     
     const success = await savePOSOrderLocally(newOrder);
     if (success) {
-      // Sync customer to DB on POS order (PDO API handles count update)
       await syncCustomerWithDB({
         ...newOrder.customer,
         total: newOrder.total,
         address: newOrder.address
       });
-      
       setOrders(prev => [newOrder, ...prev]);
-      
-      // Reload customers to reflect changes
       const updatedCustomers = await fetchCustomersFromDB();
       setDbCustomers(updatedCustomers);
-      
       return newOrder;
-    } else {
-      throw new Error("Failed to save POS order to database.");
     }
+    return null;
   };
 
   const handleAddManualCustomer = async (customer: Customer) => {
-    const res = await syncCustomerWithDB(customer);
-    if (res.success) {
-      const updatedCustomers = await fetchCustomersFromDB();
-      setDbCustomers(updatedCustomers);
-    }
-  };
-
-  const handleSendToCourierDirectly = async (order: Order, courier: 'Steadfast' | 'Pathao') => {
-    if (courier === 'Steadfast') {
-      const res = await createSteadfastOrder(order);
-      if (res.status === 200) {
-        setOrders(prev => prev.map(o => o.id === order.id ? { 
-          ...o, 
-          courier_tracking_code: res.consignment.tracking_code,
-          courier_name: 'Steadfast',
-          courier_status: res.consignment.status,
-          status: 'Shipping'
-        } : o));
-      }
-      return res;
-    } else {
-      alert("Pathao requires location selection. Please send via Order Detail view.");
-      throw new Error("Pathao requires detailed area selection.");
-    }
+    await syncCustomerWithDB(customer);
+    const updatedCustomers = await fetchCustomersFromDB();
+    setDbCustomers(updatedCustomers);
   };
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      All: orders.length,
-      Pending: 0,
-      Packaging: 0,
-      Shipping: 0,
-      Delivered: 0,
-      Cancelled: 0,
-      Returned: 0,
-      Rejected: 0,
-    };
+    const counts: Record<string, number> = { All: orders.length };
     orders.forEach(order => {
-      if (counts[order.status] !== undefined) {
-        counts[order.status]++;
-      }
+      counts[order.status] = (counts[order.status] || 0) + 1;
     });
     return counts;
   }, [orders]);
@@ -393,34 +316,13 @@ const App: React.FC = () => {
   };
 
   const handleUpdateOrderStatus = (orderId: string, newStatus: Order['status']) => {
-    setOrders(prevOrders => 
-      prevOrders.map(order => 
-        order.id === orderId 
-          ? { ...order, status: newStatus } 
-          : order
-      )
-    );
-  };
-
-  const handleCustomerSMSAction = (phone: string) => {
-    setSmsPhoneTarget(phone);
-    setActivePage('bulk-sms');
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
   };
 
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
-        return (
-          <DashboardContent 
-            stats={stats} 
-            loadingInsights={loadingInsights} 
-            aiInsights={aiInsights} 
-            statusCounts={statusCounts} 
-            loadingData={loadingData}
-            onRefresh={loadAllData}
-            hasConfig={hasConfig}
-          />
-        );
+        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} onRefresh={loadAllData} hasConfig={hasConfig} />;
       case 'analytics':
         return <AnalyticsView orders={orders} stats={stats} />;
       case 'bulk-sms':
@@ -430,59 +332,26 @@ const App: React.FC = () => {
       case 'expenses':
         return <ExpenseListView expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />;
       case 'pos':
-        return (
-          <POSView 
-            products={products} 
-            customers={customers} 
-            categories={categories} 
-            onPlaceOrder={handlePlacePOSOrder}
-            onSendToCourier={handleSendToCourierDirectly}
-            onAddCustomer={handleAddManualCustomer}
-          />
-        );
+        return <POSView products={products} customers={customers} categories={categories} onPlaceOrder={handlePlacePOSOrder} onSendToCourier={async () => {}} onAddCustomer={handleAddManualCustomer} />;
       case 'customers':
-        return <CustomerListView customers={customers} onNavigateToSMS={handleCustomerSMSAction} />;
+        return <CustomerListView customers={customers} onNavigateToSMS={(p) => { setSmsPhoneTarget(p); setActivePage('bulk-sms'); }} />;
       case 'orders':
-        return (
-          <OrderDashboardView 
-            orders={filteredOrders} 
-            onViewOrder={handleViewOrder} 
-            onUpdateStatus={handleUpdateOrderStatus}
-          />
-        );
+        return <OrderDashboardView orders={filteredOrders} onViewOrder={handleViewOrder} onUpdateStatus={handleUpdateOrderStatus} />;
       case 'order-detail':
         return selectedOrder ? <OrderDetailView order={selectedOrder} onBack={() => setActivePage('orders')} /> : null;
       case 'all-products':
         return <ProductListView initialProducts={products} />;
       default:
-        return (
-          <DashboardContent 
-            stats={stats} 
-            loadingInsights={loadingInsights} 
-            aiInsights={aiInsights} 
-            statusCounts={statusCounts} 
-            loadingData={loadingData}
-            onRefresh={loadAllData}
-            hasConfig={hasConfig}
-          />
-        );
+        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} onRefresh={loadAllData} hasConfig={hasConfig} />;
     }
   };
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar 
-        activePage={activePage === 'order-detail' ? 'orders' : activePage} 
-        onNavigate={handleNavigate} 
-        statusCounts={statusCounts}
-        activeStatus={filterStatus}
-        onStatusFilter={setFilterStatus}
-      />
+      <Sidebar activePage={activePage === 'order-detail' ? 'orders' : activePage} onNavigate={handleNavigate} statusCounts={statusCounts} activeStatus={filterStatus} onStatusFilter={setFilterStatus} />
       <div className="flex-1 flex flex-col">
         <TopBar />
-        <main className="p-8">
-          {renderContent()}
-        </main>
+        <main className="p-8">{renderContent()}</main>
       </div>
     </div>
   );

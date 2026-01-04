@@ -6,16 +6,15 @@ const CUSTOMERS_API = "api/customers.php";
 export const fetchCustomersFromDB = async (): Promise<Customer[]> => {
   try {
     const res = await fetch(CUSTOMERS_API);
-    if (!res.ok) return [];
-    const data = await res.json();
-    // Handling possible error response from PHP
-    if (data.error) {
-      console.error("Database Error:", data.error);
+    if (!res.ok) {
+      const err = await res.json();
+      console.error("Server Error:", err.error);
       return [];
     }
+    const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    console.error("Error fetching customers from DB:", e);
+    console.error("Network error fetching customers:", e);
     return [];
   }
 };
