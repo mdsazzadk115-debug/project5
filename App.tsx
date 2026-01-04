@@ -66,7 +66,7 @@ const DashboardContent: React.FC<{
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard title="Online Sold" value={stats.onlineSold.toLocaleString()} change={0} icon={<ShoppingCart size={20} />} />
-      <StatCard title="Orders" value={statusCounts['All'].toString()} change={0} icon={<Truck size={20} />} isCurrency={false} />
+      <StatCard title="Orders" value={statusCounts['All']?.toString() || "0"} change={0} icon={<Truck size={20} />} isCurrency={false} />
       <StatCard title="Customers" value={stats.customers.toString()} change={0} icon={<Users size={20} />} isCurrency={false} />
       <StatCard title="Total Products" value={stats.totalProducts.toString()} change={100} icon={<Package size={20} />} isCurrency={false} />
     </div>
@@ -173,12 +173,11 @@ const App: React.FC = () => {
     }
     setLoadingData(true);
     try {
-      const [wpOrders, wpProducts, dbExpenses, wpCats, customersList] = await Promise.all([
+      const [wpOrders, wpProducts, dbExpenses, wpCats] = await Promise.all([
         fetchOrdersFromWP(),
         fetchProductsFromWP(),
         getExpenses(),
-        fetchCategoriesFromWP(),
-        fetchCustomersFromDB()
+        fetchCategoriesFromWP()
       ]);
       
       const enrichedOrders = wpOrders.map(order => ({
@@ -194,18 +193,33 @@ const App: React.FC = () => {
       setProducts(wpProducts);
       setExpenses(dbExpenses);
       setCategories(wpCats);
-      setDbCustomers(customersList);
-      
-      // Auto-sync WP customers to DB
+
+      // Auto-sync WordPress customers to local DB
+      // We identify unique customers from the orders to minimize API calls
+      const uniqueCustomers = new Map();
       syncedOrders.forEach(o => {
-        if (o.customer.phone && o.customer.phone.length > 5) {
-           syncCustomerWithDB({
-             ...o.customer,
-             total: o.total,
-             address: o.address
-           });
+        const phone = o.customer.phone?.trim();
+        if (phone && phone.length > 5) {
+          // If we haven't seen this customer yet, or if this order's total is needed for accumulation
+          // The backend usually handles accumulation, but we ensure we send all unique ones from this fetch
+          uniqueCustomers.set(phone, {
+            ...o.customer,
+            total: o.total,
+            address: o.address
+          });
         }
       });
+
+      // Execute syncs in parallel
+      if (uniqueCustomers.size > 0) {
+        await Promise.all(
+          Array.from(uniqueCustomers.values()).map(cust => syncCustomerWithDB(cust))
+        );
+      }
+
+      // Re-fetch customer list from DB to get the latest updated data (including counts)
+      const customersList = await fetchCustomersFromDB();
+      setDbCustomers(customersList);
 
       const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
       const totalExpensesValue = dbExpenses.reduce((acc, e) => acc + e.amount, 0);
@@ -302,7 +316,7 @@ const App: React.FC = () => {
       setLoadingInsights(false);
     };
     fetchInsights();
-  }, [stats]);
+  }, [stats.orders]); // Optimized to only run when order count changes
 
   const handleNavigate = (page: string) => {
     setActivePage(page);
