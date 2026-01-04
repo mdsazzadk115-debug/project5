@@ -27,7 +27,7 @@ export const fetchCustomersFromDB = async (): Promise<Customer[]> => {
   }
 };
 
-export const syncCustomerWithDB = async (customer: Partial<Customer> & { total?: number }) => {
+export const syncCustomerWithDB = async (customer: Partial<Customer> & { total?: number, order_id?: string }) => {
   try {
     const response = await fetch(CUSTOMERS_API, {
       method: 'POST',
@@ -38,10 +38,15 @@ export const syncCustomerWithDB = async (customer: Partial<Customer> & { total?:
         email: customer.email,
         address: customer.address,
         total: customer.total || 0,
-        avatar: customer.avatar
+        avatar: customer.avatar,
+        order_id: customer.order_id // Added order_id to track uniqueness in DB
       })
     });
-    return await response.json();
+    const result = await response.json();
+    if (result.error) {
+      console.error("Customer Sync API Error:", result.error);
+    }
+    return result;
   } catch (e) {
     console.error("Error syncing customer:", e);
     return { error: true };

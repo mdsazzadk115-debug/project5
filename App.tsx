@@ -195,25 +195,23 @@ const App: React.FC = () => {
       setCategories(wpCats);
 
       // Auto-sync WordPress customers to local DB
-      // We identify unique customers from the orders to minimize API calls
-      const uniqueCustomers = new Map();
-      syncedOrders.forEach(o => {
-        const phone = o.customer.phone?.trim();
-        if (phone && phone.length > 5) {
-          // If we haven't seen this customer yet, or if this order's total is needed for accumulation
-          // The backend usually handles accumulation, but we ensure we send all unique ones from this fetch
-          uniqueCustomers.set(phone, {
-            ...o.customer,
-            total: o.total,
-            address: o.address
-          });
-        }
-      });
-
-      // Execute syncs in parallel
-      if (uniqueCustomers.size > 0) {
+      // We process each order to ensure the backend can track which order IDs are already handled
+      if (syncedOrders.length > 0) {
+        // Limit parallel requests to avoid overloading PHP script
+        const customerBatches = syncedOrders.slice(0, 50); // Sync only latest 50 for performance
         await Promise.all(
-          Array.from(uniqueCustomers.values()).map(cust => syncCustomerWithDB(cust))
+          customerBatches.map(o => {
+            const phone = o.customer.phone?.trim();
+            if (phone && phone.length > 5) {
+              return syncCustomerWithDB({
+                ...o.customer,
+                total: o.total,
+                address: o.address,
+                order_id: o.id // Send Order ID for duplication check
+              });
+            }
+            return Promise.resolve();
+          })
         );
       }
 
@@ -278,7 +276,8 @@ const App: React.FC = () => {
       await syncCustomerWithDB({
         ...newOrder.customer,
         total: newOrder.total,
-        address: newOrder.address
+        address: newOrder.address,
+        order_id: newOrder.id
       });
       setOrders(prev => [newOrder, ...prev]);
       const updatedCustomers = await fetchCustomersFromDB();
