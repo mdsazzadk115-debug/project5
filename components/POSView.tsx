@@ -18,7 +18,11 @@ import {
   User,
   Phone,
   Mail,
-  MapPin
+  MapPin,
+  CreditCard,
+  Wallet,
+  // Fix: Added missing RefreshCcw icon from lucide-react
+  RefreshCcw
 } from 'lucide-react';
 import { InventoryProduct, Customer, Product, Order } from '../types';
 
@@ -175,10 +179,10 @@ export const POSView: React.FC<POSViewProps> = ({
       {/* Product Section */}
       <div className="flex-1 flex flex-col gap-6 overflow-hidden">
         {/* Top Filters */}
-        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="bg-white/70 backdrop-blur-md p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-gray-800">All Products</h2>
-            <span className="w-8 h-8 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center text-xs font-bold border border-orange-100">
+            <h2 className="text-lg font-bold text-gray-800">Marketplace</h2>
+            <span className="w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-orange-100">
               {filteredProducts.length}
             </span>
           </div>
@@ -186,7 +190,7 @@ export const POSView: React.FC<POSViewProps> = ({
           <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 max-w-[400px]">
             <button 
               onClick={() => setSelectedCategory('All')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === 'All' ? 'bg-orange-600 text-white shadow-md' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === 'All' ? 'bg-orange-600 text-white shadow-lg' : 'bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600'}`}
             >
               All Products
             </button>
@@ -194,7 +198,7 @@ export const POSView: React.FC<POSViewProps> = ({
               <button 
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.name)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === cat.name ? 'bg-orange-600 text-white shadow-md' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === cat.name ? 'bg-orange-600 text-white shadow-lg' : 'bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600'}`}
               >
                 {cat.name}
               </button>
@@ -204,10 +208,10 @@ export const POSView: React.FC<POSViewProps> = ({
           <div className="relative">
             <input 
               type="text" 
-              placeholder="Search products..." 
+              placeholder="Quick search..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:border-orange-500 w-48 lg:w-64 transition-all"
+              className="pl-9 pr-4 py-2 bg-gray-50 border border-transparent rounded-xl text-sm outline-none focus:border-orange-500 focus:bg-white w-48 lg:w-64 transition-all shadow-inner"
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           </div>
@@ -218,7 +222,7 @@ export const POSView: React.FC<POSViewProps> = ({
           {products.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center opacity-40">
               <Loader2 size={48} className="animate-spin text-orange-600 mb-4" />
-              <p className="text-sm font-bold">Synchronizing with WordPress...</p>
+              <p className="text-sm font-bold">Synchronizing Stock...</p>
             </div>
           ) : filteredProducts.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -226,22 +230,17 @@ export const POSView: React.FC<POSViewProps> = ({
                 <div 
                   key={product.id}
                   onClick={() => addToCart(product)}
-                  className="bg-white rounded-2xl border border-gray-100 p-3 hover:shadow-xl transition-all group cursor-pointer relative flex flex-col active:scale-95"
+                  className="bg-white rounded-2xl border border-gray-100 p-3 hover:shadow-xl hover:-translate-y-1 transition-all group cursor-pointer relative flex flex-col active:scale-95"
                 >
-                  {product.discountPercent > 0 && (
-                    <div className="absolute top-3 left-3 z-10 bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded-lg shadow-sm">
-                      -{product.discountPercent}% OFF
-                    </div>
-                  )}
-                  <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-3 border border-gray-100 relative">
+                  <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-3 border border-gray-100 relative shadow-inner">
                     <img 
                       src={product.img} 
                       alt={product.name} 
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
                       onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150')}
                     />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors flex items-center justify-center">
-                       <Plus className="text-white opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all drop-shadow-md" size={32} />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-orange-600/10 transition-colors flex items-center justify-center">
+                       <Plus className="text-orange-600 opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all drop-shadow-md bg-white p-2 rounded-full shadow-lg" size={40} />
                     </div>
                   </div>
                   <div className="flex-1">
@@ -249,14 +248,11 @@ export const POSView: React.FC<POSViewProps> = ({
                     <div className="flex items-center justify-between text-[10px] mb-2 font-bold uppercase tracking-tight">
                       <span className="text-gray-400">{product.brand || 'No Brand'}</span>
                       <span className={product.stock > 0 ? 'text-green-500' : 'text-red-500'}>
-                        In Stock: {product.stock}
+                        STOCK: {product.stock}
                       </span>
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-base font-black text-orange-600">৳{product.price.toLocaleString()}</span>
-                      {product.originalPrice && product.originalPrice > product.price && (
-                        <span className="text-[11px] text-gray-400 line-through">৳{product.originalPrice.toLocaleString()}</span>
-                      )}
+                      <span className="text-base font-black text-gray-900 group-hover:text-orange-600 transition-colors">৳{product.price.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -265,146 +261,153 @@ export const POSView: React.FC<POSViewProps> = ({
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-50">
               <Search size={48} className="mb-4" />
-              <p className="text-sm font-bold">No products found matching your search.</p>
+              <p className="text-sm font-bold">No matches found.</p>
             </div>
           )}
         </div>
       </div>
 
       {/* Bill Details Section */}
-      <div className="w-[400px] bg-white border border-gray-100 shadow-2xl rounded-3xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-500">
+      <div className="w-[420px] bg-white border border-gray-100 shadow-2xl rounded-3xl flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-500 relative">
         <div className="p-6 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
           <div>
-            <h3 className="font-black text-gray-800 text-lg">Bill Details</h3>
-            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Instant POS Terminal</p>
+            <h3 className="font-black text-gray-800 text-lg">Current Order</h3>
+            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Transaction Preview</p>
           </div>
           <button 
             onClick={() => setCart([])} 
             className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-            title="Clear Cart"
+            title="Reset Cart"
           >
-            <Trash2 size={20} />
+            <RefreshCcw size={18} />
           </button>
         </div>
 
         {/* Customer Selector */}
         <div className="p-6 pb-2">
-          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 block">Recipient Customer</label>
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 block">Recipient Details</label>
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <select 
-                className="w-full appearance-none pl-4 pr-10 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:border-orange-500 cursor-pointer font-bold text-gray-700 transition-all"
+                className="w-full appearance-none pl-4 pr-10 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:border-orange-500 cursor-pointer font-bold text-gray-700 transition-all shadow-sm"
                 value={selectedCustomer?.email || ''}
                 onChange={(e) => setSelectedCustomer(customers.find(c => c.email === e.target.value) || null)}
               >
-                <option value="">Select Customer</option>
+                <option value="">Guest Walk-in</option>
                 {customers.map(c => <option key={c.phone + c.email} value={c.email}>{c.name} ({c.phone})</option>)}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
             </div>
             <button 
               onClick={() => setShowAddCustomerModal(true)}
-              className="w-12 h-12 bg-orange-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-orange-100 hover:bg-orange-700 active:scale-95 transition-all"
+              className="w-12 h-12 bg-gray-900 text-white rounded-2xl flex items-center justify-center shadow-lg hover:bg-black active:scale-95 transition-all"
             >
               <UserPlus size={20} />
             </button>
           </div>
+          {selectedCustomer && (
+            <div className="mt-3 flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-2xl animate-in fade-in slide-in-from-top-2">
+               <img src={selectedCustomer.avatar} className="w-8 h-8 rounded-full border border-white shadow-sm" alt="avatar" />
+               <div className="flex-1">
+                 <p className="text-xs font-bold text-blue-900">{selectedCustomer.name}</p>
+                 <p className="text-[10px] text-blue-500 font-medium">{selectedCustomer.phone}</p>
+               </div>
+               <button onClick={() => setSelectedCustomer(null)} className="p-1 hover:bg-blue-100 rounded-full text-blue-400">
+                 <X size={14} />
+               </button>
+            </div>
+          )}
         </div>
 
         {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-3">
           {cart.length > 0 ? cart.map(item => (
-            <div key={item.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-gray-100 group hover:border-orange-200 transition-all shadow-sm">
-              <img src={item.img} alt={item.name} className="w-14 h-14 rounded-xl object-cover border border-gray-50 shadow-sm" />
+            <div key={item.id} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-gray-100 group hover:border-orange-200 transition-all shadow-sm">
+              <img src={item.img} alt={item.name} className="w-12 h-12 rounded-xl object-cover border border-gray-50" />
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-gray-800 line-clamp-1">{item.name}</p>
-                <p className="text-xs text-orange-600 font-black mt-0.5">৳{item.price.toLocaleString()}</p>
+                <p className="text-[12px] font-bold text-gray-800 line-clamp-1">{item.name}</p>
+                <p className="text-[11px] text-orange-600 font-black">৳{item.price.toLocaleString()}</p>
               </div>
-              <div className="flex flex-col items-center gap-1.5 bg-gray-50 rounded-xl p-1.5 border border-gray-100">
-                <button onClick={() => updateQty(item.id, 1)} className="text-gray-400 hover:text-orange-600 transition-colors">
-                  <Plus size={14} />
+              <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-1 border border-gray-100">
+                <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-orange-600 transition-colors">
+                  <Minus size={12} />
                 </button>
-                <span className="text-xs font-black text-gray-800">{item.qty}</span>
-                <button onClick={() => updateQty(item.id, -1)} className="text-gray-400 hover:text-orange-600 transition-colors">
-                  <Minus size={14} />
+                <span className="text-xs font-black text-gray-800 w-4 text-center">{item.qty}</span>
+                <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-orange-600 transition-colors">
+                  <Plus size={12} />
                 </button>
               </div>
-              <button onClick={() => removeFromCart(item.id)} className="text-gray-300 hover:text-red-500 transition-colors px-1">
-                <X size={18} />
+              <button onClick={() => removeFromCart(item.id)} className="text-gray-300 hover:text-red-500 transition-colors pr-2">
+                <Trash2 size={16} />
               </button>
             </div>
           )) : (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 gap-6 opacity-40 scale-90">
-              <div className="w-24 h-24 rounded-full bg-gray-50 flex items-center justify-center border-2 border-dashed border-gray-200">
-                <ShoppingCart size={40} />
+            <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 opacity-30 select-none">
+              <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center border-2 border-dashed border-gray-200 mb-4">
+                <ShoppingCart size={32} />
               </div>
-              <p className="text-sm font-bold uppercase tracking-widest italic">Your billing cart is empty</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em]">Bag is Empty</p>
             </div>
           )}
         </div>
 
         {/* Summary */}
-        <div className="p-6 bg-gray-50/80 border-t border-gray-100 space-y-5">
-          <div className="flex items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-gray-100">
-            <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Extra Discount</span>
-            <div className="relative w-24">
+        <div className="p-6 bg-gray-50 border-t border-gray-100 space-y-6">
+          <div className="flex items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Adjust Discount</span>
+            <div className="relative w-28">
               <input 
                 type="number" 
                 value={extraDiscount}
                 onChange={(e) => setExtraDiscount(parseFloat(e.target.value) || 0)}
-                className="w-full pl-6 pr-2 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-xs font-black text-right outline-none focus:border-orange-500"
+                className="w-full pl-6 pr-3 py-1.5 bg-gray-50 border border-gray-100 rounded-xl text-xs font-black text-right outline-none focus:border-orange-500 shadow-inner"
               />
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-gray-400">৳</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">৳</span>
             </div>
           </div>
 
           <div className="space-y-3 px-1">
-            <div className="flex justify-between text-xs font-bold text-gray-500">
-              <span>Subtotal</span>
+            <div className="flex justify-between text-xs font-bold text-gray-400">
+              <span>Merchandise Subtotal</span>
               <span>৳{subtotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-xs font-bold text-green-500">
-              <span>Discount</span>
-              <span>- ৳{extraDiscount.toLocaleString()}</span>
-            </div>
+            {extraDiscount > 0 && (
+              <div className="flex justify-between text-xs font-bold text-emerald-500">
+                <span>Special Promotion</span>
+                <span>- ৳{extraDiscount.toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center border-t border-gray-200 pt-4">
-              <span className="font-black text-gray-800 uppercase text-xs tracking-wider">Net Total</span>
-              <span className="text-2xl font-black text-orange-600">৳{finalTotal.toLocaleString()}</span>
+              <span className="font-black text-gray-800 uppercase text-xs tracking-[0.1em]">Estimated Total</span>
+              <span className="text-3xl font-black text-gray-900 tracking-tighter">৳{finalTotal.toLocaleString()}</span>
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Payment Channel</label>
             <div className="grid grid-cols-2 gap-3">
               <button 
                 onClick={() => setPaymentMethod('Hand Cash')}
-                className={`py-3 px-4 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border shadow-sm ${paymentMethod === 'Hand Cash' ? 'bg-orange-600 text-white border-orange-600 shadow-orange-100' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                className={`py-3 px-4 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border shadow-sm ${paymentMethod === 'Hand Cash' ? 'bg-orange-600 text-white border-orange-600 shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'}`}
               >
-                {paymentMethod === 'Hand Cash' && <Check size={14} />} Hand Cash
+                <Wallet size={14} /> Cash
               </button>
               <button 
                 onClick={() => setPaymentMethod('Card Pay')}
-                className={`py-3 px-4 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border shadow-sm ${paymentMethod === 'Card Pay' ? 'bg-orange-600 text-white border-orange-600 shadow-orange-100' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                className={`py-3 px-4 rounded-2xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border shadow-sm ${paymentMethod === 'Card Pay' ? 'bg-orange-600 text-white border-orange-600 shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'}`}
               >
-                {paymentMethod === 'Card Pay' && <Check size={14} />} Card Pay
+                <CreditCard size={14} /> Card
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <button 
-              onClick={() => setCart([])}
-              className="py-4 bg-gray-100 text-gray-500 font-black rounded-2xl text-xs hover:bg-gray-200 transition-all uppercase tracking-widest"
-            >
-              Cancel
-            </button>
+          <div className="pt-2">
             <button 
               onClick={handlePlaceOrder}
               disabled={isPlacing || cart.length === 0}
-              className="py-4 bg-orange-600 text-white font-black rounded-2xl text-xs shadow-xl shadow-orange-100 hover:bg-orange-700 transition-all uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-5 bg-gray-900 text-white font-black rounded-[2rem] text-sm shadow-2xl shadow-gray-200 hover:bg-black transition-all uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-3 active:scale-[0.98]"
             >
-              {isPlacing ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              Order Placed
+              {isPlacing ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+              Checkout Order
             </button>
           </div>
         </div>
@@ -412,87 +415,67 @@ export const POSView: React.FC<POSViewProps> = ({
 
       {/* Add Customer Modal */}
       {showAddCustomerModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
             <div className="p-8 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-black text-gray-800">Add New Customer</h3>
-                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Quick Registration Terminal</p>
+                <h3 className="text-xl font-black text-gray-800">New Client</h3>
+                <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Direct Registration</p>
               </div>
               <button onClick={() => setShowAddCustomerModal(false)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all">
                 <X size={24} />
               </button>
             </div>
             
-            <form onSubmit={handleAddCustomerSubmit} className="p-8 space-y-6">
+            <form onSubmit={handleAddCustomerSubmit} className="p-8 space-y-5">
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <User size={12} className="text-orange-500" /> Full Name
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2 flex items-center gap-2">
+                    <User size={12} /> Name
                   </label>
                   <input 
                     type="text" 
                     required
-                    placeholder="Enter customer name"
+                    placeholder="E.g. John Doe"
                     value={newCustomer.name}
                     onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                    className="w-full px-5 py-4 bg-gray-50 border border-transparent rounded-[1.5rem] text-sm font-bold outline-none focus:border-orange-500 focus:bg-white transition-all shadow-inner"
                   />
                 </div>
                 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <Phone size={12} className="text-orange-500" /> Phone Number
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2 flex items-center gap-2">
+                    <Phone size={12} /> Mobile
                   </label>
                   <input 
                     type="tel" 
                     required
-                    placeholder="017xxxxxxxx"
+                    placeholder="01xxxxxxxxx"
                     value={newCustomer.phone}
                     onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
-                  />
-                </div>
-                
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <Mail size={12} className="text-orange-500" /> Email Address (Optional)
-                  </label>
-                  <input 
-                    type="email" 
-                    placeholder="customer@email.com"
-                    value={newCustomer.email}
-                    onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                    className="w-full px-5 py-4 bg-gray-50 border border-transparent rounded-[1.5rem] text-sm font-bold outline-none focus:border-orange-500 focus:bg-white transition-all shadow-inner"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <MapPin size={12} className="text-orange-500" /> Delivery Address
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2 flex items-center gap-2">
+                    <MapPin size={12} /> Address
                   </label>
                   <textarea 
-                    placeholder="Enter full delivery address"
+                    placeholder="Delivery details..."
                     value={newCustomer.address}
                     onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-500 transition-all h-20 resize-none"
+                    className="w-full px-5 py-4 bg-gray-50 border border-transparent rounded-[1.5rem] text-sm font-bold outline-none focus:border-orange-500 focus:bg-white transition-all h-24 resize-none shadow-inner"
                   />
                 </div>
               </div>
 
               <div className="flex gap-4 pt-4">
                 <button 
-                  type="button"
-                  onClick={() => setShowAddCustomerModal(false)}
-                  className="flex-1 py-4 bg-gray-100 text-gray-500 font-black rounded-2xl text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
-                >
-                  Discard
-                </button>
-                <button 
                   type="submit"
-                  className="flex-1 py-4 bg-orange-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-orange-100 hover:bg-orange-700 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-5 bg-orange-600 text-white font-black rounded-[2rem] text-xs uppercase tracking-widest shadow-xl shadow-orange-100 hover:bg-orange-700 transition-all flex items-center justify-center gap-2"
                 >
-                  <Check size={16} /> Save Customer
+                  Confirm & Save
                 </button>
               </div>
             </form>
@@ -503,64 +486,57 @@ export const POSView: React.FC<POSViewProps> = ({
       {/* Post-Order Action Modal */}
       {placedOrder && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
-            <div className="p-8 text-center bg-emerald-50 relative">
-               <div className="w-20 h-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl shadow-emerald-200 animate-bounce">
-                  <Check size={40} strokeWidth={3} />
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100 relative">
+            <div className="p-10 text-center bg-gray-50 relative">
+               <div className="w-24 h-24 bg-orange-600 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-orange-200 animate-in zoom-in duration-500">
+                  <Check size={48} strokeWidth={3} />
                </div>
-               <h3 className="text-2xl font-black text-gray-800 mb-1">Order Placed Successfully!</h3>
-               <p className="text-sm font-bold text-emerald-600 uppercase tracking-widest">Order ID: {placedOrder.id}</p>
-               <button onClick={() => setPlacedOrder(null)} className="absolute top-6 right-6 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all">
-                  <X size={24} />
-               </button>
+               <h3 className="text-3xl font-black text-gray-900 mb-2 tracking-tighter">Order Success!</h3>
+               <p className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Invoice: {placedOrder.id}</p>
+               <div className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-2xl shadow-sm text-xs font-bold text-gray-600">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                  Status: Ready for Courier
+               </div>
             </div>
             
-            <div className="p-8 space-y-6">
-              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
-                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-gray-100 shadow-sm">
-                    <Truck className="text-orange-500" size={24} />
-                 </div>
-                 <div className="flex-1">
-                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Instant Fulfillment</p>
-                    <p className="text-sm font-bold text-gray-700">Send this order to courier directly from here.</p>
-                 </div>
-              </div>
-
+            <div className="p-10 space-y-8">
               <div className="grid grid-cols-2 gap-4">
                 <button 
                   onClick={() => handleSendCourier('Steadfast')}
                   disabled={isSendingCourier}
-                  className="flex flex-col items-center gap-4 p-6 bg-white border-2 border-orange-100 rounded-3xl hover:bg-orange-50 hover:border-orange-500 transition-all group shadow-sm"
+                  className="flex flex-col items-center gap-4 p-8 bg-gray-50 border-2 border-transparent rounded-[2.5rem] hover:bg-white hover:border-orange-500 transition-all group shadow-sm"
                 >
-                  <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <div className="w-14 h-14 bg-white text-orange-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
                     <Send size={24} />
                   </div>
-                  <span className="font-black text-gray-800 text-sm">Steadfast</span>
+                  <span className="font-black text-gray-800 text-xs uppercase tracking-widest">Steadfast</span>
                 </button>
                 <button 
                   onClick={() => handleSendCourier('Pathao')}
                   disabled={isSendingCourier}
-                  className="flex flex-col items-center gap-4 p-6 bg-white border-2 border-red-100 rounded-3xl hover:bg-red-50 hover:border-red-500 transition-all group shadow-sm"
+                  className="flex flex-col items-center gap-4 p-8 bg-gray-50 border-2 border-transparent rounded-[2.5rem] hover:bg-white hover:border-red-500 transition-all group shadow-sm"
                 >
-                  <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <div className="w-14 h-14 bg-white text-red-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
                     <Truck size={24} />
                   </div>
-                  <span className="font-black text-gray-800 text-sm">Pathao</span>
+                  <span className="font-black text-gray-800 text-xs uppercase tracking-widest">Pathao</span>
                 </button>
               </div>
 
-              <button 
-                onClick={() => setPlacedOrder(null)}
-                className="w-full py-4 bg-gray-800 text-white font-black rounded-2xl text-sm shadow-xl hover:bg-black transition-all uppercase tracking-widest flex items-center justify-center gap-2"
-              >
-                Close & Go to Dashboard
-              </button>
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => setPlacedOrder(null)}
+                  className="w-full py-5 bg-gray-900 text-white font-black rounded-[2rem] text-xs shadow-2xl shadow-gray-200 hover:bg-black transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-2"
+                >
+                  Dismiss Terminal
+                </button>
+              </div>
             </div>
 
             {isSendingCourier && (
-              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-[210]">
-                 <Loader2 size={48} className="animate-spin text-orange-600 mb-4" />
-                 <p className="text-sm font-black text-gray-800 uppercase tracking-widest">Processing Courier Request...</p>
+              <div className="absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center z-[210] animate-in fade-in">
+                 <Loader2 size={64} className="animate-spin text-orange-600 mb-6" />
+                 <p className="text-xs font-black text-gray-800 uppercase tracking-[0.3em] animate-pulse">Establishing Dispatch...</p>
               </div>
             )}
           </div>

@@ -27,7 +27,8 @@ import {
   Receipt,
   Loader2,
   RefreshCcw,
-  AlertTriangle
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
 import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory, savePOSOrderLocally } from './services/wordpressService';
@@ -42,9 +43,10 @@ const DashboardContent: React.FC<{
   aiInsights: string[];
   statusCounts: Record<string, number>;
   loadingData: boolean;
+  syncProgress: { current: number; total: number } | null;
   onRefresh: () => void;
   hasConfig: boolean;
-}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData, onRefresh, hasConfig }) => (
+}> = ({ stats, loadingInsights, aiInsights, statusCounts, loadingData, syncProgress, onRefresh, hasConfig }) => (
   <div className="space-y-8 animate-in fade-in duration-500">
     {!hasConfig && (
       <div className="bg-red-50 border border-red-100 p-6 rounded-2xl flex items-center gap-4 text-red-600 shadow-sm animate-pulse">
@@ -72,9 +74,19 @@ const DashboardContent: React.FC<{
     </div>
 
     {loadingData && (
-      <div className="flex items-center justify-center gap-2 p-4 bg-orange-50 text-orange-600 rounded-xl border border-orange-100 animate-pulse">
-        <Loader2 size={16} className="animate-spin" />
-        <span className="text-sm font-bold">Synchronizing Database...</span>
+      <div className="flex flex-col gap-2 p-4 bg-orange-50 text-orange-600 rounded-xl border border-orange-100 shadow-sm transition-all">
+        <div className="flex items-center justify-center gap-2">
+          <Loader2 size={16} className="animate-spin" />
+          <span className="text-sm font-bold">Synchronizing Database...</span>
+        </div>
+        {syncProgress && (
+          <div className="w-full bg-orange-100 h-1.5 rounded-full overflow-hidden mt-1">
+            <div 
+              className="bg-orange-600 h-full transition-all duration-300 ease-out" 
+              style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+            />
+          </div>
+        )}
       </div>
     )}
 
@@ -149,6 +161,7 @@ const App: React.FC = () => {
   const [dbCustomers, setDbCustomers] = useState<Customer[]>([]);
   const [smsPhoneTarget, setSmsPhoneTarget] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{current: number, total: number} | null>(null);
   const [hasConfig, setHasConfig] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     netProfit: 0,
@@ -172,6 +185,7 @@ const App: React.FC = () => {
       setHasConfig(false);
     }
     setLoadingData(true);
+    setSyncProgress(null);
     try {
       const [wpOrders, wpProducts, dbExpenses, wpCats] = await Promise.all([
         fetchOrdersFromWP(),
@@ -195,27 +209,39 @@ const App: React.FC = () => {
       setCategories(wpCats);
 
       // Auto-sync WordPress customers to local DB
-      // We process each order to ensure the backend can track which order IDs are already handled
+      // FIX: Use small batches or sequential processing to avoid "PHP Fatal error: Call to a member function prepare() on string"
       if (syncedOrders.length > 0) {
-        // Limit parallel requests to avoid overloading PHP script
-        const customerBatches = syncedOrders.slice(0, 50); // Sync only latest 50 for performance
-        await Promise.all(
-          customerBatches.map(o => {
-            const phone = o.customer.phone?.trim();
-            if (phone && phone.length > 5) {
-              return syncCustomerWithDB({
-                ...o.customer,
-                total: o.total,
-                address: o.address,
-                order_id: o.id // Send Order ID for duplication check
-              });
-            }
-            return Promise.resolve();
-          })
-        );
+        const uniquePhones = new Set<string>();
+        const customersToSync = syncedOrders.filter(o => {
+          const phone = o.customer.phone?.trim();
+          if (phone && phone.length > 5 && !uniquePhones.has(phone)) {
+            uniquePhones.add(phone);
+            return true;
+          }
+          return false;
+        }).slice(0, 50); // Process top 50 unique customers
+
+        setSyncProgress({ current: 0, total: customersToSync.length });
+        
+        // Process in batches of 3 to keep server load low
+        const batchSize = 3;
+        for (let i = 0; i < customersToSync.length; i += batchSize) {
+          const batch = customersToSync.slice(i, i + batchSize);
+          await Promise.all(
+            batch.map(o => syncCustomerWithDB({
+              ...o.customer,
+              total: o.total,
+              address: o.address,
+              order_id: o.id
+            }))
+          );
+          setSyncProgress(prev => prev ? { ...prev, current: i + batch.length } : null);
+          // Small breathing room for the server
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
 
-      // Re-fetch customer list from DB to get the latest updated data (including counts)
+      // Re-fetch customer list from DB to get the latest updated data
       const customersList = await fetchCustomersFromDB();
       setDbCustomers(customersList);
 
@@ -236,6 +262,7 @@ const App: React.FC = () => {
       console.error("Sync failed:", err);
     } finally {
       setLoadingData(false);
+      setSyncProgress(null);
     }
   };
 
@@ -335,7 +362,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (activePage) {
       case 'dashboard':
-        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} onRefresh={loadAllData} hasConfig={hasConfig} />;
+        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} syncProgress={syncProgress} onRefresh={loadAllData} hasConfig={hasConfig} />;
       case 'analytics':
         return <AnalyticsView orders={orders} stats={stats} />;
       case 'bulk-sms':
@@ -355,7 +382,7 @@ const App: React.FC = () => {
       case 'all-products':
         return <ProductListView initialProducts={products} />;
       default:
-        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} onRefresh={loadAllData} hasConfig={hasConfig} />;
+        return <DashboardContent stats={stats} loadingInsights={loadingInsights} aiInsights={aiInsights} statusCounts={statusCounts} loadingData={loadingData} syncProgress={syncProgress} onRefresh={loadAllData} hasConfig={hasConfig} />;
     }
   };
 
