@@ -11,7 +11,6 @@ import { ProductListView } from './components/ProductListView';
 import { BulkSMSView } from './components/BulkSMSView';
 import { CourierDashboardView } from './components/CourierDashboardView';
 import { ExpenseListView } from './components/ExpenseListView';
-import { POSView } from './components/POSView';
 import { CustomerListView } from './components/CustomerListView';
 import { 
   DollarSign, 
@@ -21,18 +20,15 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
-  Box,
-  ClipboardCheck,
   Zap,
   Receipt,
   Loader2,
   RefreshCcw,
-  AlertTriangle,
-  Database
+  AlertTriangle
 } from 'lucide-react';
 import { getBusinessInsights } from './services/geminiService';
-import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory, savePOSOrderLocally } from './services/wordpressService';
-import { syncOrderStatusWithCourier, createSteadfastOrder } from './services/courierService';
+import { fetchOrdersFromWP, fetchProductsFromWP, getWPConfig, fetchCategoriesFromWP, WPCategory } from './services/wordpressService';
+import { syncOrderStatusWithCourier } from './services/courierService';
 import { getExpenses, saveExpenses } from './services/expenseService';
 import { fetchCustomersFromDB, syncCustomerWithDB } from './services/customerService';
 import { DashboardStats, Order, InventoryProduct, Customer, Expense } from './types';
@@ -62,7 +58,7 @@ const DashboardContent: React.FC<{
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         <StatCard title="Profit" value={stats.netProfit.toLocaleString()} change={100} icon={<DollarSign size={20} />} />
         <StatCard title="Total Expenses" value={stats.totalExpenses.toLocaleString()} change={0} icon={<CreditCard size={20} />} />
-        <StatCard title="Total Sale" value={stats.totalPosSale.toLocaleString()} change={100} icon={<Receipt size={20} />} />
+        <StatCard title="Total Revenue" value={stats.totalRevenue.toLocaleString()} change={100} icon={<Receipt size={20} />} />
       </div>
     </div>
 
@@ -98,7 +94,7 @@ const DashboardContent: React.FC<{
             <RefreshCcw size={12} className={loadingData ? 'animate-spin' : ''} />
           </button>
         </div>
-        <p className="text-2xl font-bold text-gray-800 mb-4">৳{(stats.totalPosSale / 10).toLocaleString()}</p>
+        <p className="text-2xl font-bold text-gray-800 mb-4">৳{(stats.totalRevenue / 10).toLocaleString()}</p>
         <div className="flex-1 min-h-[100px]">
           <MiniLineChart />
         </div>
@@ -167,7 +163,7 @@ const App: React.FC = () => {
     netProfit: 0,
     grossProfit: 0,
     totalExpenses: 0,
-    totalPosSale: 0,
+    totalRevenue: 0,
     onlineSold: 0,
     orders: 0,
     customers: 0,
@@ -208,8 +204,6 @@ const App: React.FC = () => {
       setExpenses(dbExpenses);
       setCategories(wpCats);
 
-      // Auto-sync WordPress customers to local DB
-      // FIX: Use small batches or sequential processing to avoid "PHP Fatal error: Call to a member function prepare() on string"
       if (syncedOrders.length > 0) {
         const uniquePhones = new Set<string>();
         const customersToSync = syncedOrders.filter(o => {
@@ -219,11 +213,10 @@ const App: React.FC = () => {
             return true;
           }
           return false;
-        }).slice(0, 50); // Process top 50 unique customers
+        }).slice(0, 50);
 
         setSyncProgress({ current: 0, total: customersToSync.length });
         
-        // Process in batches of 3 to keep server load low
         const batchSize = 3;
         for (let i = 0; i < customersToSync.length; i += batchSize) {
           const batch = customersToSync.slice(i, i + batchSize);
@@ -235,25 +228,23 @@ const App: React.FC = () => {
               order_id: o.id
             }))
           );
-          setSyncProgress(prev => prev ? { ...prev, current: i + batch.length } : null);
-          // Small breathing room for the server
+          setSyncProgress(prev => prev ? { ...prev, current: Math.min(i + batch.length, customersToSync.length) } : null);
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
-      // Re-fetch customer list from DB to get the latest updated data
       const customersList = await fetchCustomersFromDB();
       setDbCustomers(customersList);
 
-      const totalSales = syncedOrders.reduce((acc, o) => acc + o.total, 0);
+      const totalRevenueValue = syncedOrders.reduce((acc, o) => acc + o.total, 0);
       const totalExpensesValue = dbExpenses.reduce((acc, e) => acc + e.amount, 0);
       
       setStats({
-        totalPosSale: totalSales,
+        totalRevenue: totalRevenueValue,
         totalExpenses: totalExpensesValue,
-        netProfit: totalSales - totalExpensesValue,
-        grossProfit: totalSales * 0.45,
-        onlineSold: totalSales * 0.2,
+        netProfit: totalRevenueValue - totalExpensesValue,
+        grossProfit: totalRevenueValue * 0.45,
+        onlineSold: totalRevenueValue,
         orders: syncedOrders.length,
         customers: customersList.length,
         totalProducts: wpProducts.length
@@ -289,31 +280,6 @@ const App: React.FC = () => {
     loadAllData();
   };
 
-  const handlePlacePOSOrder = async (orderData: Omit<Order, 'id' | 'timestamp' | 'date' | 'statusHistory'>): Promise<Order | null> => {
-    const newOrder: Order = {
-      ...orderData,
-      id: `POS-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-      timestamp: Date.now(),
-      date: new Date().toLocaleString(),
-      statusHistory: { placed: new Date().toLocaleDateString() }
-    };
-    
-    const success = await savePOSOrderLocally(newOrder);
-    if (success) {
-      await syncCustomerWithDB({
-        ...newOrder.customer,
-        total: newOrder.total,
-        address: newOrder.address,
-        order_id: newOrder.id
-      });
-      setOrders(prev => [newOrder, ...prev]);
-      const updatedCustomers = await fetchCustomersFromDB();
-      setDbCustomers(updatedCustomers);
-      return newOrder;
-    }
-    return null;
-  };
-
   const handleAddManualCustomer = async (customer: Customer) => {
     await syncCustomerWithDB(customer);
     const updatedCustomers = await fetchCustomersFromDB();
@@ -342,7 +308,7 @@ const App: React.FC = () => {
       setLoadingInsights(false);
     };
     fetchInsights();
-  }, [stats.orders]); // Optimized to only run when order count changes
+  }, [stats.orders]);
 
   const handleNavigate = (page: string) => {
     setActivePage(page);
@@ -371,8 +337,6 @@ const App: React.FC = () => {
         return <CourierDashboardView orders={orders} onRefresh={loadAllData} />;
       case 'expenses':
         return <ExpenseListView expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />;
-      case 'pos':
-        return <POSView products={products} customers={customers} categories={categories} onPlaceOrder={handlePlacePOSOrder} onSendToCourier={async () => {}} onAddCustomer={handleAddManualCustomer} />;
       case 'customers':
         return <CustomerListView customers={customers} onNavigateToSMS={(p) => { setSmsPhoneTarget(p); setActivePage('bulk-sms'); }} />;
       case 'orders':

@@ -69,7 +69,7 @@ export interface DashboardStats {
   netProfit: number;
   grossProfit: number;
   totalExpenses: number;
-  totalPosSale: number;
+  totalRevenue: number;
   onlineSold: number;
   orders: number;
   customers: number;

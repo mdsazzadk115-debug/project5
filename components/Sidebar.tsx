@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   BarChart2, 
-  ShoppingCart, 
   Package, 
   Tag, 
   Layers, 
@@ -13,9 +12,7 @@ import {
   ChevronRight,
   Truck,
   Minus,
-  MessageSquare,
-  ShieldCheck,
-  Calculator
+  MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -205,8 +202,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
           </div>
         )}
 
-        <SidebarItem icon={<ShoppingCart size={18} />} label="Quick Orders" />
-        
         <SidebarItem 
           icon={<Package size={18} />} 
           label="Products" 
@@ -220,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onNavigate, status
           <div className="mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
             <SubMenuItem 
               label="All Products" 
-              count={13} 
+              count={0} 
               active={activeSubPage === 'all-products' && activePage === 'all-products'} 
               isLast={false}
               onClick={() => {
