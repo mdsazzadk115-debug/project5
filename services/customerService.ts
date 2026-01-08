@@ -7,18 +7,21 @@ export const fetchCustomersFromDB = async (): Promise<Customer[]> => {
   try {
     const res = await fetch(CUSTOMERS_API);
     if (!res.ok) {
-      console.error(`HTTP Error: ${res.status}`);
+      const errorText = await res.text();
+      console.error(`HTTP Error ${res.status}: ${errorText}`);
       return [];
     }
+    
     const text = await res.text();
-    if (!text || text.trim() === "" || text === "null") {
+    if (!text || text.trim() === "") {
       return [];
     }
+
     try {
       const data = JSON.parse(text);
       return Array.isArray(data) ? data : [];
     } catch (parseError) {
-      console.error("Error parsing customer JSON:", parseError, "Response text:", text);
+      console.error("Malformed JSON received from customers API:", parseError);
       return [];
     }
   } catch (e) {
@@ -39,14 +42,26 @@ export const syncCustomerWithDB = async (customer: Partial<Customer> & { total?:
         address: customer.address,
         total: customer.total || 0,
         avatar: customer.avatar,
-        order_id: customer.order_id // Added order_id to track uniqueness in DB
+        order_id: customer.order_id
       })
     });
-    const result = await response.json();
-    if (result.error) {
-      console.error("Customer Sync API Error:", result.error);
+    
+    const text = await response.text();
+    if (!response.ok) {
+        console.error("PHP Error response:", text);
+        return { error: true };
     }
-    return result;
+
+    if (!text || text.trim() === "") {
+      return { success: true };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (parseError) {
+      console.error("Error parsing customer sync response:", parseError);
+      return { error: true };
+    }
   } catch (e) {
     console.error("Error syncing customer:", e);
     return { error: true };
